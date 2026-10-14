@@ -302,6 +302,37 @@ async def test_model_free_text_is_never_shown_as_the_reason() -> None:
     assert "sin verificar" in render_text(answer, show_discarded=True)
 
 
+async def test_a_gap_noted_without_abstain_still_makes_the_answer_partial() -> None:
+    # Primera prueba real: el modelo respondió en parte, explicó lo que faltaba
+    # y dejó abstain = false; el título decía "Respuesta con evidencia citada".
+    draft = DraftAnswer(
+        claims=[Claim(text="Se recomienda evitar la morfina.", citations=["P1"])],
+        abstain=False,
+        abstain_reason="No compara los opioides según el grado de función renal.",
+    )
+    llm = FakeLLM(
+        {
+            QueryPlan: [RENAL_PLAN],
+            DraftAnswer: [draft],
+            VerificationReport: [verdicts("supported")],
+        }
+    )
+    answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.PARTIAL
+    assert answer.reason == PARTLY_COVERED
+
+    blank_note = draft.model_copy(update={"abstain_reason": "  "})
+    llm = FakeLLM(
+        {
+            QueryPlan: [RENAL_PLAN],
+            DraftAnswer: [blank_note],
+            VerificationReport: [verdicts("supported")],
+        }
+    )
+    answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.ANSWERED
+
+
 async def test_a_claim_citing_any_missing_passage_is_discarded() -> None:
     draft = DraftAnswer(
         claims=[Claim(text="Se recomienda evitar la morfina.", citations=["P1", "P9"])]

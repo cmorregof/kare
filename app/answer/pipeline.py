@@ -310,6 +310,11 @@ class EvidencePipeline:
         # justo la dosis inventada que el resto del pipeline bloquea. Se guarda
         # como nota y el usuario ve solo textos fijos del sistema.
         model_note = (draft.abstain_reason or "").strip() or None
+        # Si el modelo dejó dicho qué quedó sin cubrir, la respuesta es parcial
+        # aunque no haya marcado abstain: ante la duda, no presentarla completa.
+        # (Pasó en la primera prueba real: "Respuesta parcial…" en la nota y el
+        # título decía "Respuesta con evidencia citada".)
+        partly_covered = draft.abstain or model_note is not None
         if not kept:
             return FinalAnswer(
                 question=question,
@@ -322,7 +327,7 @@ class EvidencePipeline:
             )
         complete = (
             not discarded
-            and not draft.abstain
+            and not partly_covered
             and all(claim.label == "supported" for claim in kept)
         )
         if complete:
@@ -335,7 +340,7 @@ class EvidencePipeline:
                 model=model,
             )
         notes = []
-        if draft.abstain:
+        if partly_covered:
             notes.append(PARTLY_COVERED)
         if len(discarded) == 1:
             notes.append("Se omitió 1 afirmación sin soporte suficiente.")

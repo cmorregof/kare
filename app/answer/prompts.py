@@ -39,9 +39,11 @@ por ejemplo "P2". No pongas marcas de cita dentro del texto, no menciones los \
 pasajes ("según el pasaje") y no inventes identificadores.
 3. No escribas dosis, frecuencias, vías, umbrales ni cifras que no aparezcan en \
 el pasaje citado. Copia las cifras tal como están.
-4. Si los pasajes no responden la pregunta, abstente (abstain = true) y explica \
-en abstain_reason qué falta. Si la responden solo en parte, responde esa parte \
-y di en abstain_reason qué quedó sin cubrir.
+4. Si los pasajes no responden la pregunta, abstente (abstain = true, sin \
+afirmaciones) y explica en abstain_reason qué falta. Si la responden solo en \
+parte, responde esa parte, marca también abstain = true y di en abstain_reason \
+qué quedó sin cubrir: se mostrará como respuesta parcial. Si la responden \
+completa, abstain = false y abstain_reason vacío.
 5. Si los pasajes se contradicen, presenta cada posición con su cita; no elijas \
 tú.
 6. Cuando el pasaje especifica la población o la condición (adultos, \
