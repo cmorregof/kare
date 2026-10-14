@@ -27,33 +27,37 @@ sources:
     kind: guia
     language: en
     file: oms_dolor_cancer_2018.pdf
-    url: https://www.ncbi.nlm.nih.gov/books/NBK537492/
+    url: https://www.who.int/publications/i/item/9789241550390
     license_status: abierta
-    license_note: "CC BY-NC-SA 3.0 IGO: uso no comercial con atribución; las adaptaciones llevan la misma licencia."
+    license_note: "CC BY-NC-SA 3.0 IGO, según la página de la OMS: uso no comercial con atribución; las adaptaciones llevan la misma licencia. ISBN 978 92 4 155039 0. PDF: https://iris.who.int/server/api/core/bitstreams/809a021b-e75c-4f9c-b002-6fb13bf1a0f5/content"
+    reviewed_on: 2026-10-14
 
   - id: minsalud-gpc58-paliativos-2016
-    title: "Guía de Práctica Clínica para la atención de pacientes en cuidado paliativo (GPC 58)"
+    title: "Guía de Práctica Clínica para la atención de pacientes en cuidado paliativo (adopción), GPC No. 58"
     publisher: Ministerio de Salud y Protección Social, IETS
     year: 2016
+    version: "Versión final, guía completa (GPC 2016-58)"
     jurisdiction: Colombia
     kind: guia
     language: es
     file: minsalud_gpc58_paliativos_2016.pdf
     url: https://www.coosalud.com/wp-content/uploads/2019/03/Guias_practica_clinica/Version_cortapaliativo2016_04_20.pdf
-    license_status: por_verificar
-    license_note: "Documento público del Ministerio; confirmar condiciones de reutilización. El enlace es la versión corta alojada por Coosalud: buscar la completa en el repositorio del Ministerio."
+    license_status: uso_interno
+    license_note: "Sin licencia abierta. Los derechos patrimoniales son del Ministerio (contrato 0142 de 2016); Osteba y la Junta de Andalucía autorizaron al IETS a adaptar sus recomendaciones. Uso interno de investigación: se indexa en local y se citan fragmentos breves con la fuente; el PDF no se redistribuye. Pese al nombre del archivo, la copia de Coosalud es la versión final completa; si aparece en el repositorio del Ministerio, cambiar el enlace. Si KARE se vuelve producto, pedir permiso."
+    reviewed_on: 2026-10-14
 
   - id: minsalud-gpc65-opioides-2022
-    title: "GPC 65: opioides en dolor crónico no oncológico, adultos y pediatría"
-    publisher: Ministerio de Salud y Protección Social
+    title: "Guía de práctica clínica para el tratamiento con opioides del dolor crónico no oncológico en población adulta y pediátrica en Colombia, GPC No. 65"
+    publisher: Ministerio de Salud y Protección Social, IETS, Fondo Nacional de Estupefacientes
     year: 2022
     jurisdiction: Colombia
     kind: guia
     language: es
     file: minsalud_gpc65_opioides_2022.pdf
-    url: https://www.minsalud.gov.co/sites/rid/Lists/BibliotecaDigital/RIDE/VS/MET/FNE/gpc-65-opioides-dolor-cronico-no-onco-adultos-pediatria-co-vpc.pdf
+    url: https://consultorsalud.com/wp-content/uploads/2022/08/GPC-DCNO-Version-profesionales-de-la-salud-2022-08-23.pdf
     license_status: por_verificar
-    license_note: "Pública. Solo para seguridad en el uso de opioides: no es una guía oncológica."
+    license_note: "La licencia no es el problema: derechos cedidos al Ministerio, como la GPC 58. El problema es la versión: el PDF del Ministerio es la versión para pacientes y cuidadores, y la versión para profesionales que circula (copia de Consultorsalud, 23 ago 2022) dice revisión por pares «Pendiente». Se indexa cuando aparezca la versión final para profesionales. Solo para seguridad en el uso de opioides: no es una guía oncológica."
+    reviewed_on: 2026-10-14
 
   - id: ley-1733-2014
     title: "Ley 1733 de 2014 (Ley Consuelo Devis Saavedra), cuidados paliativos"
