@@ -1,11 +1,12 @@
 """Recuperación léxica bilingüe con umbral de pertinencia.
 
 Un índice BM25 por idioma; cada consulta busca en el índice de su idioma; los
-rankings se fusionan con RRF. Un pasaje solo cuenta si contiene una fracción
-mínima de los términos de la consulta que lo trajo: es la primera compuerta
-de abstención, y es determinista.
+rankings se fusionan con RRF, con el mismo peso total para cada idioma. Un
+pasaje solo cuenta si contiene una fracción mínima de los términos de la
+consulta que lo trajo: es la primera compuerta de abstención, y es determinista.
 """
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -53,7 +54,7 @@ class Retriever:
         per_query_k: int = 20,
         min_coverage: float = 0.3,
     ) -> list[Passage]:
-        rankings: list[list[str]] = []
+        rankings: list[tuple[Language, list[str]]] = []
         coverage: dict[str, float] = {}
         for query in queries:
             terms = list(dict.fromkeys(analyze(query.text, query.language)))
@@ -71,8 +72,16 @@ class Retriever:
                 ranking.append(chunk_id)
                 coverage[chunk_id] = max(coverage.get(chunk_id, 0.0), share)
             if ranking:
-                rankings.append(ranking)
-        fused = reciprocal_rank_fusion(rankings)
+                rankings.append((query.language, ranking))
+        # Cada idioma pesa lo mismo, escriba el planificador las consultas que
+        # escriba en él. Con la suma simple, tres consultas en español contra
+        # dos en inglés dejaban por fuera la guía de la OMS aunque fuera la
+        # fuente pertinente. Dentro de un idioma el orden no cambia.
+        per_language = Counter(language for language, _ in rankings)
+        fused = reciprocal_rank_fusion(
+            [ranking for _, ranking in rankings],
+            weights=[1.0 / per_language[language] for language, _ in rankings],
+        )
         ordered = sorted(fused, key=lambda cid: (-fused[cid], cid))[:top_k]
         return [self._passage(cid, fused[cid], coverage[cid]) for cid in ordered]
 

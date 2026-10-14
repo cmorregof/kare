@@ -1,8 +1,12 @@
+import pytest
+
+from app.corpus.store import StoredChunk
 from app.retrieval.bm25 import BM25Index
 from app.retrieval.fusion import reciprocal_rank_fusion
-from app.retrieval.retriever import Query
+from app.retrieval.retriever import Query, Retriever
 from app.retrieval.text import analyze
-from tests.fakes import synthetic_retriever
+from app.schemas.evidence import Language
+from tests.fakes import SOURCES, synthetic_retriever
 
 
 def test_accents_do_not_change_terms() -> None:
@@ -40,6 +44,50 @@ def test_bm25_prefers_documents_matching_more_terms() -> None:
 def test_rrf_rewards_agreement() -> None:
     scores = reciprocal_rank_fusion([["a", "b"], ["b", "c"]])
     assert max(scores, key=lambda item: scores[item]) == "b"
+
+
+def test_rrf_weights_scale_each_ranking() -> None:
+    scores = reciprocal_rank_fusion([["a"], ["b"]], weights=[0.5, 1.0])
+    assert scores["b"] == 2 * scores["a"]
+    with pytest.raises(ValueError):
+        reciprocal_rank_fusion([["a"], ["b"]], weights=[1.0])
+
+
+def test_a_language_with_fewer_queries_still_reaches_the_top() -> None:
+    # Textos sintéticos. Tres consultas en español contra una en inglés: con la
+    # suma simple, los cuatro pasajes en español llenaban el top 3.
+    texts: list[tuple[Language, str]] = [
+        ("es", "Texto sintético. Morfina e insuficiencia renal: ajuste de dosis."),
+        ("es", "Texto sintético. Morfina, insuficiencia renal y metabolitos."),
+        ("es", "Texto sintético. Insuficiencia renal grave y morfina oral."),
+        ("es", "Texto sintético. Morfina en insuficiencia renal moderada."),
+        ("en", "Synthetic text. Morphine accumulates in renal impairment."),
+    ]
+    chunks = [
+        StoredChunk(
+            chunk_id=f"s{index}",
+            source_id="guia-b" if language == "en" else "guia-a",
+            page=index + 1,
+            ordinal=index,
+            language=language,
+            text=text,
+            terms=tuple(analyze(text, language)),
+        )
+        for index, (language, text) in enumerate(texts)
+    ]
+    retriever = Retriever(chunks, SOURCES)
+    plan = [
+        Query("es", "morfina insuficiencia renal"),
+        Query("es", "insuficiencia renal morfina dosis"),
+        Query("es", "morfina renal metabolitos"),
+        Query("en", "morphine renal impairment"),
+    ]
+    top = retriever.search(plan, top_k=3)
+    assert "en" in {passage.language for passage in top}
+    # Dentro de un idioma el orden no cambia por agregar consultas en otro.
+    spanish_order = [p.chunk_id for p in retriever.search(plan[:3], top_k=4)]
+    mixed = retriever.search(plan, top_k=5)
+    assert [p.chunk_id for p in mixed if p.language == "es"] == spanish_order
 
 
 def test_retriever_returns_relevant_passage_with_provenance() -> None:

@@ -25,7 +25,7 @@ solo dentro de la institución, con aprobación ética e institucional.
 pregunta
   → guardia de identificadores ............ bloquea; no sale nada del equipo
   → plan de búsqueda (es + en)
-  → BM25 por idioma + fusión RRF
+  → BM25 por idioma + fusión RRF .......... el mismo peso para cada idioma
   → umbral de cobertura ................... sin pasajes pertinentes: se abstiene
   → borrador con citas [P1]..[Pn]
   → citas válidas ......................... descarta lo que no cita un pasaje real
