@@ -6,7 +6,8 @@ para no cortar una recomendación por la mitad.
 """
 
 import re
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 
@@ -30,6 +31,115 @@ class Chunk:
 
 
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?;:])\s+(?=[A-ZÁÉÍÓÚÑ¿¡•\d(\-–])|\s+(?=•)")
+
+_EDGE_LINES = 3
+_BARE_NUMBER = re.compile(r"\s*(\d{1,4})\s*")
+_LETTER = re.compile(r"[^\W\d_]")
+
+
+def _line_key(line: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", line)).strip().lower()
+
+
+def _filled(lines: Sequence[str]) -> list[int]:
+    return [index for index, line in enumerate(lines) if line.strip()]
+
+
+def _edge_drops(
+    order: Sequence[int],
+    lines: Sequence[str],
+    *,
+    running: set[str],
+    is_page_number: Callable[[str], bool],
+) -> set[int]:
+    """Líneas de un borde que salen, recorriendo desde el extremo hacia adentro.
+
+    Mientras el bloque desde el extremo sea todo encabezado o número de página,
+    sale completo aunque pase de tres líneas (la OMS imprime su encabezado dos
+    veces). Después, dentro de las tres primeras líneas sale solo lo que es
+    encabezado; un número suelto ahí ya no se toca.
+    """
+    drops: set[int] = set()
+    contiguous = True
+    for position, index in enumerate(order):
+        line = lines[index]
+        repeated = _line_key(line) in running
+        if contiguous and (repeated or is_page_number(line)):
+            drops.add(index)
+            continue
+        contiguous = False
+        if position >= _EDGE_LINES:
+            break
+        if repeated:
+            drops.add(index)
+    return drops
+
+
+def strip_running_lines(
+    pages: Sequence[tuple[int | None, str]],
+    *,
+    min_pages: int = 8,
+    share: float = 0.3,
+) -> list[tuple[int | None, str]]:
+    """Quita encabezados, pies y números de página repetidos en el borde.
+
+    Una línea es encabezado o pie si, con las cifras normalizadas ("MINSALUD -
+    IETS 41" y "MINSALUD - IETS 42" son la misma), aparece entre las tres
+    primeras o las tres últimas líneas de al menos el 30 % de las páginas.
+    Solo se quita en el borde: la misma frase en mitad de una página es
+    contenido. Un número suelto sale solo si está pegado al borde y sigue la
+    numeración de las páginas (página 41 impresa como "39"), para no borrar la
+    cifra de una tabla. Además de limpiar la búsqueda, esto evita que un número
+    de página haga pasar una cifra inventada en el chequeo de cifras.
+    """
+    split = [(number, text.splitlines()) for number, text in pages]
+    if len(split) < min_pages:
+        return [(number, text) for number, text in pages]
+    threshold = share * len(split)
+
+    counts: Counter[str] = Counter()
+    offsets: Counter[int] = Counter()
+    for number, lines in split:
+        filled = _filled(lines)
+        edges = filled[:_EDGE_LINES] + filled[-_EDGE_LINES:]
+        counts.update({_line_key(lines[index]) for index in edges})
+        if number is not None:
+            seen_here = set()
+            for index in edges:
+                bare = _BARE_NUMBER.fullmatch(lines[index])
+                if bare:
+                    seen_here.add(int(bare.group(1)) - number)
+            offsets.update(seen_here)
+    running = {
+        key for key, seen in counts.items() if seen >= threshold and _LETTER.search(key)
+    }
+    offset = None
+    if offsets:
+        candidate, seen = offsets.most_common(1)[0]
+        if seen >= threshold:
+            offset = candidate
+
+    cleaned: list[tuple[int | None, str]] = []
+    for number, lines in split:
+
+        def is_page_number(line: str, number: int | None = number) -> bool:
+            bare = _BARE_NUMBER.fullmatch(line)
+            return (
+                bare is not None
+                and offset is not None
+                and number is not None
+                and int(bare.group(1)) - number == offset
+            )
+
+        filled = _filled(lines)
+        drops = set()
+        for order in (filled, filled[::-1]):
+            drops |= _edge_drops(
+                order, lines, running=running, is_page_number=is_page_number
+            )
+        kept = [line for index, line in enumerate(lines) if index not in drops]
+        cleaned.append((number, "\n".join(kept)))
+    return cleaned
 
 
 def clean_page_text(raw: str) -> str:

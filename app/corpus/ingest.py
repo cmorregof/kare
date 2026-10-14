@@ -13,7 +13,7 @@ from typing import Literal
 
 from pypdf import PdfReader
 
-from app.corpus.chunking import ChunkingConfig, chunk_pages
+from app.corpus.chunking import ChunkingConfig, chunk_pages, strip_running_lines
 from app.corpus.manifest import Manifest, SourceSpec
 from app.corpus.store import CorpusStore
 from app.retrieval.text import analyze
@@ -43,6 +43,9 @@ def read_pages(path: Path) -> list[tuple[int | None, str]]:
     """Texto por página. Los .txt/.md no tienen páginas salvo saltos \\f."""
     suffix = path.suffix.lower()
     if suffix == ".pdf":
+        # pypdf avisa de fuentes que no decodifica del todo (fontTools); no
+        # cambia el texto que se extrae y llena la terminal de ruido.
+        logging.getLogger("pypdf").setLevel(logging.ERROR)
         reader = PdfReader(str(path))
         if reader.is_encrypted:
             reader.decrypt("")
@@ -81,7 +84,7 @@ def ingest_source(
     except Exception as exc:  # pypdf lanza tipos muy variados
         logger.exception("No se pudo leer %s", path)
         return IngestReport(spec.id, "error", f"no se pudo leer el archivo: {exc}")
-    chunks = chunk_pages(pages, config)
+    chunks = chunk_pages(strip_running_lines(pages), config)
     if not chunks:
         return IngestReport(
             spec.id,
