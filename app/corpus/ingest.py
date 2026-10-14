@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_SUFFIXES = (".pdf", ".txt", ".md")
 
+MISMATCH = (
+    "el archivo no es la versión revisada (su sha256 no coincide con el del "
+    "manifiesto): revisa la versión nueva y actualiza sha256 antes de indexarla"
+)
+
 
 @dataclass(frozen=True)
 class IngestReport:
@@ -79,6 +84,9 @@ def ingest_source(
         return IngestReport(spec.id, "pendiente", f"falta el archivo {path}")
     if path.suffix.lower() not in SUPPORTED_SUFFIXES:
         return IngestReport(spec.id, "error", f"formato no soportado: {path.suffix}")
+    sha256 = file_sha256(path)
+    if spec.sha256 and sha256 != spec.sha256:
+        return IngestReport(spec.id, "error", MISMATCH)
     try:
         pages = read_pages(path)
     except Exception as exc:  # pypdf lanza tipos muy variados
@@ -92,7 +100,7 @@ def ingest_source(
             "sin texto extraíble (¿PDF escaneado? necesita OCR antes de ingerirse)",
         )
     terms = [analyze(chunk.text, spec.language) for chunk in chunks]
-    store.save_source(spec, sha256=file_sha256(path), chunks=chunks, terms=terms)
+    store.save_source(spec, sha256=sha256, chunks=chunks, terms=terms)
     paged = len({chunk.page for chunk in chunks if chunk.page is not None})
     detail = f"{len(chunks)} fragmentos" + (f" de {paged} páginas" if paged else "")
     return IngestReport(spec.id, "ingerida", detail, chunks=len(chunks))

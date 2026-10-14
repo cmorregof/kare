@@ -37,6 +37,11 @@ class SourceSpec(BaseModel):
     language: Language
     file: str
     url: str | None = None
+    # Enlace directo al archivo, para `kare descargar` (por ejemplo en el
+    # servidor del bot). Va con el sha256 de la versión revisada: si el archivo
+    # cambia, no se indexa hasta que alguien lo revise y actualice la huella.
+    download_url: str | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     license_status: LicenseStatus
     license_note: str = ""
     evidence_level: str | None = None

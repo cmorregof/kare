@@ -8,6 +8,11 @@
 # Los archivos van en corpus/fuentes/ y no se versionan (ver .gitignore).
 # Formatos: .pdf, .txt, .md. Un PDF escaneado necesita OCR antes.
 #
+# download_url + sha256: `kare descargar` baja el archivo de su fuente oficial
+# y lo acepta solo si su huella coincide con la versión revisada. Si la fuente
+# publica otra versión, no se indexa hasta revisarla y actualizar sha256
+# (`sha256sum archivo.pdf` en Linux, `shasum -a 256 archivo.pdf` en macOS).
+#
 # license_status:
 #   abierta        licencia abierta verificada (CC, dominio público, norma pública)
 #   uso_interno    términos leídos que permiten indexarla para uso interno, sin redistribuir
@@ -28,8 +33,10 @@ sources:
     language: en
     file: oms_dolor_cancer_2018.pdf
     url: https://www.who.int/publications/i/item/9789241550390
+    download_url: https://iris.who.int/server/api/core/bitstreams/809a021b-e75c-4f9c-b002-6fb13bf1a0f5/content
+    sha256: c3a0bb5d44ef294cea399864d2438dadb852970797cea1eb30dbc73e227207dc
     license_status: abierta
-    license_note: "CC BY-NC-SA 3.0 IGO, según la página de la OMS: uso no comercial con atribución; las adaptaciones llevan la misma licencia. ISBN 978 92 4 155039 0. PDF: https://iris.who.int/server/api/core/bitstreams/809a021b-e75c-4f9c-b002-6fb13bf1a0f5/content"
+    license_note: "CC BY-NC-SA 3.0 IGO, según la página de la OMS: uso no comercial con atribución; las adaptaciones llevan la misma licencia. ISBN 978 92 4 155039 0."
     reviewed_on: 2026-10-14
 
   - id: minsalud-gpc58-paliativos-2016
@@ -42,8 +49,10 @@ sources:
     language: es
     file: minsalud_gpc58_paliativos_2016.pdf
     url: https://www.coosalud.com/wp-content/uploads/2019/03/Guias_practica_clinica/Version_cortapaliativo2016_04_20.pdf
+    download_url: https://www.coosalud.com/wp-content/uploads/2019/03/Guias_practica_clinica/Version_cortapaliativo2016_04_20.pdf
+    sha256: 2eebdb0ce56c7e10a938f1244ae5f23988b5ef62361b575548c549b47718fb3a
     license_status: uso_interno
-    license_note: "Sin licencia abierta. Los derechos patrimoniales son del Ministerio (contrato 0142 de 2016); Osteba y la Junta de Andalucía autorizaron al IETS a adaptar sus recomendaciones. Uso interno de investigación: se indexa en local y se citan fragmentos breves con la fuente; el PDF no se redistribuye. Pese al nombre del archivo, la copia de Coosalud es la versión final completa; si aparece en el repositorio del Ministerio, cambiar el enlace. Si KARE se vuelve producto, pedir permiso."
+    license_note: "Sin licencia abierta. Los derechos patrimoniales son del Ministerio (contrato 0142 de 2016); Osteba y la Junta de Andalucía autorizaron al IETS a adaptar sus recomendaciones. Uso interno de investigación: se indexa en equipos propios o en el servidor privado del bot (acceso restringido) y se citan fragmentos breves con la fuente; el PDF no se redistribuye. Pese al nombre del archivo, la copia de Coosalud es la versión final completa; si aparece en el repositorio del Ministerio, cambiar el enlace. Si KARE se vuelve producto, pedir permiso."
     reviewed_on: 2026-10-14
 
   - id: minsalud-gpc65-opioides-2022
