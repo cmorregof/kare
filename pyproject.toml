@@ -1,6 +1,6 @@
 [project]
 name = "kare"
-version = "0.1.1"
+version = "0.2.0"
 description = "KARE-E: asistente de evidencia citada para cuidados paliativos oncológicos, en español"
 readme = "README.md"
 requires-python = ">=3.11"

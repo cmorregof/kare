@@ -8,7 +8,7 @@ DISCLAIMER = (
     "clínico: verifica cada afirmación en la fuente citada."
 )
 
-_TITLES = {
+TITLES = {
     AnswerStatus.ANSWERED: "Respuesta con evidencia citada",
     AnswerStatus.PARTIAL: "Respuesta parcial: solo lo que el corpus sustenta",
     AnswerStatus.ABSTAINED: "Sin respuesta",
@@ -16,7 +16,7 @@ _TITLES = {
 }
 
 
-def _snippet(text: str, limit: int) -> str:
+def snippet(text: str, limit: int) -> str:
     flat = " ".join(text.split())
     if len(flat) <= limit:
         return flat
@@ -24,7 +24,7 @@ def _snippet(text: str, limit: int) -> str:
     return f"{cut}…"
 
 
-def _source_line(passage: Passage) -> str:
+def source_line(passage: Passage) -> str:
     line = locator(passage)
     if passage.language == "en":
         line += " [en inglés]"
@@ -34,7 +34,7 @@ def _source_line(passage: Passage) -> str:
 def render_text(
     answer: FinalAnswer, *, show_discarded: bool = False, snippet_chars: int = 280
 ) -> str:
-    lines = [_TITLES[answer.status]]
+    lines = [TITLES[answer.status]]
     if answer.reason:
         lines.append(answer.reason)
 
@@ -56,15 +56,15 @@ def render_text(
                 if passage is None:
                     lines.append(f"[{number}] {cid}")
                     continue
-                lines.append(f"[{number}] {_source_line(passage)}")
-                lines.append(f"    «{_snippet(passage.text, snippet_chars)}»")
+                lines.append(f"[{number}] {source_line(passage)}")
+                lines.append(f"    «{snippet(passage.text, snippet_chars)}»")
     elif (
         answer.status == AnswerStatus.ABSTAINED and answer.passages and not answer.model
     ):
         lines += ["", "Pasajes más cercanos (sin generar texto)"]
         for number, passage in enumerate(answer.passages, start=1):
-            lines.append(f"[{number}] {_source_line(passage)}")
-            lines.append(f"    «{_snippet(passage.text, snippet_chars)}»")
+            lines.append(f"[{number}] {source_line(passage)}")
+            lines.append(f"    «{snippet(passage.text, snippet_chars)}»")
 
     if show_discarded and answer.discarded:
         lines += ["", "Descartadas"]

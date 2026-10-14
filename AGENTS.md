@@ -33,6 +33,11 @@ snowballstemmer, pytest, ruff, mypy.
   dato detectado no se repite en ningún mensaje.
 - El audio sale al proveedor de transcripción antes de que la guardia lo
   lea: solo se dictan preguntas genéricas.
+- El bot de Telegram (`app/telegram`) es zona personal: responde solo a IDs
+  autorizados, borra del chat lo que la guardia bloquea, no procesa textos
+  largos, y sus registros nunca llevan texto de preguntas, respuestas ni
+  transcripciones. El token va en la URL de la API: nunca registrar URLs de
+  httpx ni encadenar sus excepciones.
 - **Zona clínica** (historias, audio con pacientes): solo dentro de la
   institución, con modelos locales o proveedores con retención cero y
   contrato. No está construida.

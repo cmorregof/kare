@@ -75,7 +75,30 @@ class Settings(BaseSettings):
     # sustentadas. True: también las parcialmente sustentadas, marcadas.
     keep_partial_claims: bool = False
 
+    # --- Bot de Telegram (zona personal: solo preguntas generales) ------------
+    telegram_bot_token: str = ""
+    # IDs numéricos de Telegram autorizados, separados por comas. Cualquiera
+    # puede pedirle al bot su propio ID con /id; nadie más recibe respuestas.
+    telegram_allowed_users: str = ""
+    # Una pregunta larga suele ser una nota clínica pegada: no se procesa.
+    telegram_max_question_chars: int = 600
+
     log_level: str = "INFO"
+
+
+def parse_user_ids(raw: str) -> frozenset[int]:
+    """'123, 456' → {123, 456}. Un valor que no es entero es un error."""
+    ids: set[int] = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not part.lstrip("-").isdigit():
+            raise ValueError(
+                "TELEGRAM_ALLOWED_USERS lleva IDs numéricos separados por comas."
+            )
+        ids.add(int(part))
+    return frozenset(ids)
 
 
 @lru_cache(maxsize=1)

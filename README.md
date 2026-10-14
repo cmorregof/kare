@@ -58,13 +58,55 @@ pasajes más cercanos y no genera texto. Sirve para revisar el corpus.
 | Comando | Qué hace |
 |---|---|
 | `kare estado` | Modelo configurado, transcripción y fragmentos por fuente |
+| `kare descargar [--solo ID ...]` | Baja de su enlace oficial las fuentes autorizadas, si coinciden con su huella |
 | `kare ingerir [--solo ID ...]` | Indexa las fuentes autorizadas del manifiesto |
 | `kare preguntar "..." [--descartadas] [--json]` | Responde con evidencia citada |
 | `kare preguntar --audio nota.m4a` | Transcribe la pregunta dictada y responde |
 | `kare escanear "..." \| --archivo F` | Revisa si un texto trae identificadores |
 | `kare transcribir nota.m4a` | Solo transcribe |
+| `kare bot` | Bot privado de Telegram (ver abajo) |
 | `kare evaluar correr --banco B --salida D` | Corre KARE-E y el modelo solo; arma la hoja ciega |
 | `kare evaluar puntuar --corrida D --calificaciones H ...` | Calcula métricas e informe |
+
+## Bot de Telegram
+
+`kare bot` atiende por Telegram con el mismo pipeline. Es zona personal:
+Telegram guarda los mensajes en sus servidores antes de que el bot los lea.
+Por eso:
+
+- Solo responde a los IDs de Telegram autorizados. A cualquier otro le dice
+  su ID y nada más.
+- La guardia corre antes del modelo. Si un mensaje o una nota de voz trae
+  identificadores, el bot lo borra del chat, no lo procesa y no repite el dato.
+- No procesa textos de más de 600 caracteres: una pregunta larga suele ser
+  una nota clínica pegada.
+- Los registros del servidor no llevan el texto de preguntas, respuestas ni
+  transcripciones: solo estados, conteos y tiempos.
+- `/start` explica las reglas, `/fuentes` lista los documentos indexados e
+  `/id` le dice a cada quien su ID.
+
+### Despliegue en Railway
+
+El repositorio trae un `Dockerfile`; el bot usa *long polling*, así que no
+necesita dominio público.
+
+1. En Telegram, `/newbot` con @BotFather. Guarda el token: va solo en Railway.
+   De paso, `/setjoingroups` → *Disable*, para que nadie lo meta en un grupo.
+2. En Railway: *New Project → Deploy from GitHub repo* → este repositorio.
+3. Al servicio, agrégale un volumen con *mount path* `/data`. Ahí quedan los
+   PDF y el índice (`CORPUS_DIR=/data/fuentes`, `DB_PATH=/data/kare.db` ya
+   vienen en la imagen).
+4. Variables del servicio: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN` y
+   `TELEGRAM_ALLOWED_USERS` (vacía al principio). Opcional:
+   `ELEVENLABS_API_KEY` para notas de voz.
+5. Despliega. Al arrancar baja las fuentes con enlace (`kare descargar`),
+   las indexa (unos 20 segundos) y queda escuchando. Los registros dicen
+   qué se bajó y cuántos fragmentos quedaron.
+6. Escríbele `/id` al bot desde cada teléfono autorizado, pon los IDs en
+   `TELEGRAM_ALLOWED_USERS` separados por comas y deja que redespliegue.
+
+Si una fuente no baja (el sitio rechaza al servidor o cambió el archivo), el
+bot arranca igual con las demás y el registro dice cuál faltó.
 
 ## Corpus y licencias
 
@@ -73,12 +115,17 @@ marcado `abierta` o `uso_interno`; lo `por_verificar` y lo `restringida` se
 listan pero no entran. Si una fuente baja de categoría, la siguiente ingesta
 completa la retira del índice. Los documentos no se versionan.
 
+Una fuente con `download_url` y `sha256` se puede bajar con `kare descargar`,
+y solo se acepta si su huella coincide con la de la versión revisada; la
+ingesta tampoco indexa un archivo con otra huella. Si la fuente publica otra
+versión, alguien la revisa y actualiza `sha256` en el manifiesto.
+
 Cada fragmento conserva fuente, página y huella del archivo, así que cada cita
 apunta a una página exacta de una versión concreta.
 
 ## Datos y privacidad
 
-- **Zona personal** (este repositorio, la nube, Telegram más adelante): nunca
+- **Zona personal** (este repositorio, la nube, el bot de Telegram): nunca
   datos de pacientes. La guardia corre siempre y no se desactiva. Detecta
   documentos (con puntos, comas o letras), celulares y fijos, correos, fechas
   exactas (numéricas, abreviadas o en palabras), números de historia,
@@ -132,10 +179,19 @@ Todo por variables de entorno o `.env` (ver `.env.example`). Lo principal:
 | `KEEP_PARTIAL_CLAIMS` | `false` | Mostrar afirmaciones parcialmente sustentadas, marcadas |
 | `ELEVENLABS_STT_MODEL` | `scribe_v2` | Transcripción de preguntas dictadas |
 | `ELEVENLABS_ZERO_RETENTION` | `false` | Retención cero en ElevenLabs (Enterprise) |
+| `TELEGRAM_BOT_TOKEN` | vacío | Token del bot (de @BotFather) |
+| `TELEGRAM_ALLOWED_USERS` | vacío | IDs de Telegram autorizados, separados por comas |
+| `TELEGRAM_MAX_QUESTION_CHARS` | `600` | Largo máximo de una pregunta en el bot |
 
 ## Estado
 
-v0.1.1 (14 de octubre de 2026): pipeline completo, guardia, ingesta con
+v0.2.0 (14 de octubre de 2026): primera corrida con un modelo real y el corpus
+real (OMS 2018 y GPC 58). Corrigió tres cosas: encabezados y números de página
+dentro de los fragmentos, una fusión de rankings que dejaba por fuera la guía
+en inglés, y respuestas parciales presentadas como completas. Suma el bot de
+Telegram y la descarga de fuentes con huella.
+
+v0.1.1: pipeline completo, guardia, ingesta con
 licencias, transcripción y arnés de evaluación, con 181 pruebas sobre un
 modelo simulado. Una revisión independiente de v0.1 encontró fugas en la
 guardia (una coma después de la cédula bastaba), un camino por el que texto
@@ -148,7 +204,8 @@ Plan de cuatro semanas:
 
 1. Corpus con licencias verificadas, 30 a 50 preguntas de Karen y búsqueda
    sistemática de trabajos parecidos.
-2. Primera corrida real; ajuste de umbrales; interfaz por Telegram.
+2. Primera corrida real (hecha); ajuste de umbrales; interfaz por Telegram
+   (hecha).
 3. Factualidad conforme (P4) sobre `support_score`, KARE-E frente al modelo
    solo y taxonomía de errores.
 4. Ronda ciega con Karen y una o dos paliativistas; decisión de seguir o no.

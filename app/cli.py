@@ -1,11 +1,13 @@
 """Línea de comandos de KARE-E.
 
 kare estado                        configuración y corpus
+kare descargar [--solo ID ...]     baja las fuentes autorizadas con enlace
 kare ingerir [--solo ID ...]       indexa las fuentes autorizadas
 kare preguntar "..."               responde con evidencia citada
 kare preguntar --audio nota.m4a    transcribe la pregunta y responde
 kare escanear "..."                revisa si un texto trae identificadores
 kare transcribir nota.m4a          solo transcribe
+kare bot                           bot privado de Telegram
 kare evaluar correr --banco eval/pallqa_es.csv --salida runs/r1
 kare evaluar puntuar --corrida runs/r1 --calificaciones runs/r1/ciego_karen.csv
 """
@@ -19,10 +21,11 @@ from pathlib import Path
 
 from app import __version__
 from app.answer.baseline import BaselineAnswerer
-from app.answer.pipeline import EvidencePipeline, PipelineConfig
+from app.answer.factory import build_pipeline
 from app.answer.render import render_text
 from app.core.config import Settings, get_settings
 from app.corpus.chunking import ChunkingConfig
+from app.corpus.download import download_sources
 from app.corpus.ingest import ingest_manifest
 from app.corpus.manifest import load_manifest
 from app.corpus.store import CorpusStore
@@ -31,7 +34,6 @@ from app.eval.run import run_evaluation
 from app.eval.score import render_report, score_run
 from app.guard.identifiers import describe, redact, scan
 from app.llm.client import build_llm
-from app.retrieval.retriever import Retriever
 from app.transcription import get_transcriber, transcribe_safely
 
 Handler = Callable[[argparse.Namespace, Settings], int]
@@ -71,21 +73,6 @@ def _shown_transcript(text: str) -> str:
     return redact(text, findings)
 
 
-def _build_pipeline(
-    settings: Settings, store: CorpusStore
-) -> tuple[EvidencePipeline, int]:
-    retriever = Retriever.from_store(store)
-    generator = build_llm(settings, role="generator")
-    verifier = build_llm(settings, role="verifier") or generator
-    config = PipelineConfig(
-        top_k=settings.top_k,
-        per_query_k=settings.per_query_k,
-        min_coverage=settings.min_coverage,
-        keep_partial=settings.keep_partial_claims,
-    )
-    return EvidencePipeline(retriever, generator, verifier, config), len(retriever)
-
-
 def cmd_status(args: argparse.Namespace, settings: Settings) -> int:
     print(f"KARE {__version__}")
     print(f"Modelo: {_model_label(settings)}")
@@ -110,6 +97,23 @@ def cmd_status(args: argparse.Namespace, settings: Settings) -> int:
         print(f"  {source_id:<34} {'fuera del manifiesto':<13} {counts[source_id]:>6}")
     print(f"Total: {sum(counts.values())} fragmentos indexados.")
     return 0
+
+
+def cmd_download(args: argparse.Namespace, settings: Settings) -> int:
+    manifest = load_manifest(settings.manifest_path)
+    reports = download_sources(
+        manifest, corpus_dir=Path(settings.corpus_dir), only=args.solo or None
+    )
+    for report in reports:
+        print(f"{report.status:<10} {report.source_id}: {report.message}")
+    return 1 if any(report.status == "error" for report in reports) else 0
+
+
+def cmd_bot(args: argparse.Namespace, settings: Settings) -> int:
+    # Importación tardía: la terminal no necesita el bot para nada más.
+    from app.telegram.bot import run_bot
+
+    return asyncio.run(run_bot(settings))
 
 
 def cmd_ingest(args: argparse.Namespace, settings: Settings) -> int:
@@ -152,7 +156,7 @@ def cmd_ask(args: argparse.Namespace, settings: Settings) -> int:
         print("Escribe una pregunta o usa --audio.", file=sys.stderr)
         return 2
     with CorpusStore(settings.db_path) as store:
-        pipeline, indexed = _build_pipeline(settings, store)
+        pipeline, indexed = build_pipeline(settings, store)
     if indexed == 0:
         print("Aviso: el corpus está vacío; corre `kare ingerir`.\n", file=sys.stderr)
     answer = asyncio.run(pipeline.answer(question))
@@ -206,7 +210,7 @@ def cmd_eval_run(args: argparse.Namespace, settings: Settings) -> int:
         print("La evaluación necesita un modelo configurado.", file=sys.stderr)
         return 2
     with CorpusStore(settings.db_path) as store:
-        pipeline, indexed = _build_pipeline(settings, store)
+        pipeline, indexed = build_pipeline(settings, store)
         sources = sorted(store.sources())
     if indexed == 0:
         print("El corpus está vacío: corre `kare ingerir` primero.", file=sys.stderr)
@@ -281,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
     status = commands.add_parser("estado", help="configuración y estado del corpus")
     status.set_defaults(handler=cmd_status)
 
+    download = commands.add_parser(
+        "descargar", help="baja las fuentes autorizadas que tienen enlace"
+    )
+    download.add_argument("--solo", nargs="+", metavar="ID", help="solo estas fuentes")
+    download.set_defaults(handler=cmd_download)
+
     ingest = commands.add_parser("ingerir", help="indexa las fuentes autorizadas")
     ingest.add_argument("--solo", nargs="+", metavar="ID", help="solo estas fuentes")
     ingest.set_defaults(handler=cmd_ingest)
@@ -300,6 +310,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan_cmd.add_argument("texto", nargs="*")
     scan_cmd.add_argument("--archivo", help="archivo de texto a revisar")
     scan_cmd.set_defaults(handler=cmd_scan)
+
+    bot = commands.add_parser("bot", help="bot privado de Telegram (long polling)")
+    bot.set_defaults(handler=cmd_bot)
 
     transcribe = commands.add_parser("transcribir", help="transcribe una nota de voz")
     transcribe.add_argument("audio")

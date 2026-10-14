@@ -101,6 +101,11 @@ class EvidencePipeline:
         self._verifier = verifier or generator
         self._config = config or PipelineConfig()
 
+    @property
+    def has_model(self) -> bool:
+        """False en modo solo recuperación: muestra pasajes, no genera."""
+        return self._generator is not None
+
     async def answer(self, question: str) -> FinalAnswer:
         question = question.strip()
         if not question:
