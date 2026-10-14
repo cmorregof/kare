@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     elevenlabs_base_url: str = "https://api.elevenlabs.io"
     elevenlabs_stt_model: str = "scribe_v2"
+    # True envía enable_logging=false: modo de retención cero, sin guardar audio
+    # ni transcripción. Según la API, solo para clientes Enterprise.
+    elevenlabs_zero_retention: bool = False
     transcription_language: str = "es"
     keyterms_path: str = "config/keyterms_paliativos.txt"
     # Respaldo con Whisper de OpenAI; usa openai_api_key.

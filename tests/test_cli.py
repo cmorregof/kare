@@ -68,3 +68,22 @@ def test_questions_with_identifiers_are_blocked(
     output = capsys.readouterr().out
     assert "Pregunta bloqueada" in output
     assert "Rosa" not in output
+
+
+def test_audio_transcript_with_identifiers_is_redacted_and_warned(
+    workspace: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeTranscriber:
+        async def transcribe(self, audio_path: str) -> str:
+            return "La paciente con cédula 1053456789 tiene dolor, ¿qué opioide uso?"
+
+    monkeypatch.setattr("app.cli.get_transcriber", lambda settings: FakeTranscriber())
+    audio = workspace / "nota.m4a"
+    audio.write_bytes(b"audio")
+    assert main(["preguntar", "--audio", str(audio)]) == 0
+    captured = capsys.readouterr()
+    assert "1053456789" not in captured.out
+    assert "ya salió al servicio de transcripción" in captured.err
+    assert "Pregunta bloqueada" in captured.out

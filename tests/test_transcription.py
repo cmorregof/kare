@@ -63,3 +63,23 @@ async def test_transcribe_safely_never_raises() -> None:
             raise RuntimeError("sin red")
 
     assert await transcribe_safely(Broken(), "nota.m4a") is None
+
+
+async def test_zero_retention_is_opt_in(tmp_path: Path) -> None:
+    audio = tmp_path / "pregunta.m4a"
+    audio.write_bytes(b"audio-de-prueba")
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"text": "hola"})
+
+    for zero_retention in (False, True):
+        transcriber = ElevenLabsTranscriber(
+            api_key="clave",
+            zero_retention=zero_retention,
+            transport=httpx.MockTransport(handler),
+        )
+        await transcriber.transcribe(str(audio))
+    assert "enable_logging" not in seen[0].url.params
+    assert seen[1].url.params["enable_logging"] == "false"

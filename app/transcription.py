@@ -89,10 +89,12 @@ class ElevenLabsTranscriber:
         keyterms: Sequence[str] = (),
         base_url: str = "https://api.elevenlabs.io",
         timeout: float = 120.0,
+        zero_retention: bool = False,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("Falta ELEVENLABS_API_KEY.")
+        self._zero_retention = zero_retention
         self._api_key = api_key
         self._model = model
         self._language = language
@@ -117,6 +119,7 @@ class ElevenLabsTranscriber:
         ) as client:
             response = await client.post(
                 f"{self._base_url}/v1/speech-to-text",
+                params={"enable_logging": "false"} if self._zero_retention else None,
                 headers={"xi-api-key": self._api_key},
                 data=data,
                 files={"file": _audio_part(Path(audio_path))},
@@ -188,6 +191,7 @@ def get_transcriber(settings: Settings) -> Transcriber | None:
             keyterms=keyterms,
             base_url=settings.elevenlabs_base_url,
             timeout=settings.transcription_timeout_seconds,
+            zero_retention=settings.elevenlabs_zero_retention,
         )
     if settings.openai_api_key:
         # Whisper admite un prompt corto con vocabulario; unos pocos términos bastan.

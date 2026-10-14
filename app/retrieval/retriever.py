@@ -15,6 +15,8 @@ from app.retrieval.fusion import reciprocal_rank_fusion
 from app.retrieval.text import analyze
 from app.schemas.evidence import Language, Passage
 
+MIN_MATCHED_TERMS = 2
+
 
 @dataclass(frozen=True)
 class Query:
@@ -55,13 +57,15 @@ class Retriever:
         coverage: dict[str, float] = {}
         for query in queries:
             terms = list(dict.fromkeys(analyze(query.text, query.language)))
-            if not terms:
+            # Una sola palabra ("pacientes") no basta para decir que un pasaje
+            # es pertinente: toda consulta necesita dos términos coincidentes.
+            if len(terms) < MIN_MATCHED_TERMS:
                 continue
             chunks = self._by_language[query.language]
             ranking: list[str] = []
             for hit in self._indexes[query.language].search(terms, per_query_k):
                 share = hit.matched / len(terms)
-                if hit.matched < min(2, len(terms)) or share < min_coverage:
+                if hit.matched < MIN_MATCHED_TERMS or share < min_coverage:
                     continue
                 chunk_id = chunks[hit.doc_index].chunk_id
                 ranking.append(chunk_id)

@@ -53,18 +53,19 @@ class BaselineAnswerer:
         claims = [
             VerifiedClaim(text=text, label="unverified") for text in texts if text
         ]
-        reason = (draft.abstain_reason or "").strip() or None
+        model_note = (draft.abstain_reason or "").strip() or None
         if not claims:
             return FinalAnswer(
                 question=question,
                 status=AnswerStatus.ABSTAINED,
-                reason=reason or "El modelo se abstuvo.",
+                reason="El modelo se abstuvo.",
+                model_note=model_note,
                 model=model,
             )
         return FinalAnswer(
             question=question,
             status=AnswerStatus.PARTIAL if draft.abstain else AnswerStatus.ANSWERED,
             claims=claims,
-            reason=reason,
+            model_note=model_note,
             model=model,
         )

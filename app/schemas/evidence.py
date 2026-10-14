@@ -95,7 +95,11 @@ class FinalAnswer(BaseModel):
     claims: list[VerifiedClaim] = Field(default_factory=list)
     discarded: list[VerifiedClaim] = Field(default_factory=list)
     passages: list[Passage] = Field(default_factory=list)
+    # Texto fijo escrito por el sistema; nunca texto libre del modelo.
     reason: str | None = None
+    # Lo que el modelo dijo al abstenerse. Sin verificar: no se muestra como
+    # respuesta; queda para depurar y para el análisis de la evaluación.
+    model_note: str | None = None
     model: str | None = None
     # Solo los tipos de identificador; nunca el valor encontrado.
     blocked_kinds: list[str] = Field(default_factory=list)

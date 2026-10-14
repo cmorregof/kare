@@ -2,6 +2,8 @@ from app.answer.pipeline import (
     NO_MODEL,
     NO_PASSAGES,
     NO_SUPPORT,
+    NOT_COVERED,
+    PARTLY_COVERED,
     VERIFICATION_FAILED,
     EvidencePipeline,
     PipelineConfig,
@@ -266,13 +268,85 @@ async def test_missing_verdict_discards_the_claim() -> None:
     assert answer.discarded[0].text == "Se prefieren hidromorfona o fentanilo."
 
 
-async def test_model_abstention_reason_is_reported() -> None:
-    draft = DraftAnswer(abstain=True, abstain_reason="Los pasajes no tratan diálisis.")
+INVENTED_NOTE = "No cubre la dosis: inicie hidromorfona 8 mg cada 4 horas."
+
+
+async def test_model_free_text_is_never_shown_as_the_reason() -> None:
+    # Hallazgo de la revisión independiente: el motivo de abstención del
+    # modelo se mostraba tal cual y podía traer una dosis inventada.
+    abstained = DraftAnswer(abstain=True, abstain_reason=INVENTED_NOTE)
+    llm = FakeLLM({QueryPlan: [RENAL_PLAN], DraftAnswer: [abstained]})
+    answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.ABSTAINED
+    assert answer.reason == NOT_COVERED
+    assert answer.model_note == INVENTED_NOTE
+    assert "8 mg" not in render_text(answer)
+    assert llm.calls_for(VerificationReport) == []
+
+    partial = DraftAnswer(
+        claims=[Claim(text="Se recomienda evitar la morfina.", citations=["P1"])],
+        abstain=True,
+        abstain_reason=INVENTED_NOTE,
+    )
+    llm = FakeLLM(
+        {
+            QueryPlan: [RENAL_PLAN],
+            DraftAnswer: [partial],
+            VerificationReport: [verdicts("supported")],
+        }
+    )
+    answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.PARTIAL
+    assert answer.reason == PARTLY_COVERED
+    assert "8 mg" not in render_text(answer)
+    assert "sin verificar" in render_text(answer, show_discarded=True)
+
+
+async def test_a_claim_citing_any_missing_passage_is_discarded() -> None:
+    draft = DraftAnswer(
+        claims=[Claim(text="Se recomienda evitar la morfina.", citations=["P1", "P9"])]
+    )
     llm = FakeLLM({QueryPlan: [RENAL_PLAN], DraftAnswer: [draft]})
     answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
     assert answer.status == AnswerStatus.ABSTAINED
-    assert answer.reason == "Los pasajes no tratan diálisis."
+    assert answer.discarded[0].decided_by == Stage.CITATIONS
+    assert "P9" in answer.discarded[0].rationale
     assert llm.calls_for(VerificationReport) == []
+
+
+async def test_conflicting_verdicts_keep_the_most_severe() -> None:
+    draft = DraftAnswer(
+        claims=[Claim(text="Se recomienda evitar la morfina.", citations=["P1"])]
+    )
+    report = VerificationReport(
+        verdicts=[
+            SupportVerdict(claim_index=1, label="supported"),
+            SupportVerdict(claim_index=1, label="unsupported"),
+        ]
+    )
+    llm = FakeLLM(
+        {QueryPlan: [RENAL_PLAN], DraftAnswer: [draft], VerificationReport: [report]}
+    )
+    answer = await EvidencePipeline(synthetic_retriever(), llm).answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.ABSTAINED
+
+
+async def test_claims_over_the_limit_are_reported_not_silently_dropped() -> None:
+    claim = Claim(text="Se recomienda evitar la morfina.", citations=["P1"])
+    llm = FakeLLM(
+        {
+            QueryPlan: [RENAL_PLAN],
+            DraftAnswer: [DraftAnswer(claims=[claim, claim, claim])],
+            VerificationReport: [verdicts("supported", "supported")],
+        }
+    )
+    pipeline = EvidencePipeline(
+        synthetic_retriever(), llm, config=PipelineConfig(max_claims=2)
+    )
+    answer = await pipeline.answer(RENAL_QUESTION)
+    assert answer.status == AnswerStatus.PARTIAL
+    assert len(answer.claims) == 2
+    assert "máximo" in answer.discarded[0].rationale
 
 
 async def test_retrieval_only_mode_without_model() -> None:

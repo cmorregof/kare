@@ -80,12 +80,18 @@ apunta a una página exacta de una versión concreta.
 
 - **Zona personal** (este repositorio, la nube, Telegram más adelante): nunca
   datos de pacientes. La guardia corre siempre y no se desactiva. Detecta
-  documentos, teléfonos, correos, fechas exactas, números de historia,
-  direcciones y nombres después de "paciente", "doña", "señor"… No detecta
-  todo: la regla sigue siendo preguntar en términos generales.
+  documentos (con puntos, comas o letras), celulares y fijos, correos, fechas
+  exactas (numéricas, abreviadas o en palabras), números de historia,
+  direcciones (incluidas manzana y casa) y nombres después de "paciente",
+  "doña", "señor", "Nombre:"… No detecta un nombre escrito en minúsculas ni uno
+  sin palabra que lo anuncie: la regla sigue siendo preguntar en términos
+  generales.
 - **Audio**: sale al proveedor de transcripción antes de que la guardia pueda
-  leerlo. Solo se dictan preguntas genéricas. Para ElevenLabs, activar la
-  exclusión del uso de datos para entrenamiento en la cuenta.
+  leerlo. Solo se dictan preguntas genéricas; si la transcripción trae
+  identificadores, se muestra redactada y no va al modelo. Para ElevenLabs,
+  activar la exclusión del uso de datos para entrenamiento en la cuenta;
+  `ELEVENLABS_ZERO_RETENTION=true` pide retención cero (solo cuentas
+  Enterprise).
 - **Zona clínica** (historias y audio con pacientes): solo dentro de la
   institución, con modelos locales o proveedores con retención cero y
   contrato. No está construida.
@@ -125,13 +131,18 @@ Todo por variables de entorno o `.env` (ver `.env.example`). Lo principal:
 | `MIN_COVERAGE` | `0.3` | Fracción de términos de la consulta que debe tener un pasaje |
 | `KEEP_PARTIAL_CLAIMS` | `false` | Mostrar afirmaciones parcialmente sustentadas, marcadas |
 | `ELEVENLABS_STT_MODEL` | `scribe_v2` | Transcripción de preguntas dictadas |
+| `ELEVENLABS_ZERO_RETENTION` | `false` | Retención cero en ElevenLabs (Enterprise) |
 
 ## Estado
 
-v0.1 (octubre de 2026): pipeline completo, guardia, ingesta con licencias,
-transcripción y arnés de evaluación, con 89 pruebas sobre un modelo simulado.
-Falta lo que no se puede simular: la primera corrida con un modelo real, el
-corpus real y las preguntas de Karen.
+v0.1.1 (14 de octubre de 2026): pipeline completo, guardia, ingesta con
+licencias, transcripción y arnés de evaluación, con 181 pruebas sobre un
+modelo simulado. Una revisión independiente de v0.1 encontró fugas en la
+guardia (una coma después de la cédula bastaba), un camino por el que texto
+libre del modelo llegaba sin verificar a la pantalla y errores de mil veces en
+el chequeo de cifras; están corregidos y cada caso quedó como prueba. Falta lo
+que no se puede simular: la primera corrida con un modelo real, el corpus real
+y las preguntas de Karen.
 
 Plan de cuatro semanas:
 

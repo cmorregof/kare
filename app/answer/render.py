@@ -69,8 +69,14 @@ def render_text(
     if show_discarded and answer.discarded:
         lines += ["", "Descartadas"]
         for claim in answer.discarded:
-            stage = claim.decided_by.value if claim.decided_by else "sin etapa"
+            stage = claim.decided_by.value if claim.decided_by else "límite"
             lines.append(f"- {claim.text} ({stage}: {claim.rationale})")
+    if show_discarded and answer.model_note:
+        lines += [
+            "",
+            "Nota del modelo (sin verificar; no usar como evidencia):",
+            f"  {answer.model_note}",
+        ]
 
     if answer.status in {AnswerStatus.ANSWERED, AnswerStatus.PARTIAL}:
         lines += ["", DISCLAIMER]

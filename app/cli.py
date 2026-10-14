@@ -55,6 +55,22 @@ def _model_label(settings: Settings) -> str:
     return "ninguno (solo recuperación)"
 
 
+AUDIO_ALREADY_SENT = (
+    "Aviso: la transcripción trae datos que identifican a una persona. El audio ya "
+    "salió al servicio de transcripción; el texto no se enviará al modelo. Dicta "
+    "solo preguntas generales."
+)
+
+
+def _shown_transcript(text: str) -> str:
+    """La transcripción tal cual, o redactada (con aviso) si trae identificadores."""
+    findings = scan(text)
+    if not findings:
+        return text
+    print(AUDIO_ALREADY_SENT, file=sys.stderr)
+    return redact(text, findings)
+
+
 def _build_pipeline(
     settings: Settings, store: CorpusStore
 ) -> tuple[EvidencePipeline, int]:
@@ -130,7 +146,7 @@ def cmd_ask(args: argparse.Namespace, settings: Settings) -> int:
         if not heard:
             print("No se pudo transcribir el audio.", file=sys.stderr)
             return 1
-        print(f"Escuché: {heard}\n")
+        print(f"Escuché: {_shown_transcript(heard)}\n")
         question = f"{question} {heard}".strip()
     if not question:
         print("Escribe una pregunta o usa --audio.", file=sys.stderr)
@@ -175,10 +191,7 @@ def cmd_transcribe(args: argparse.Namespace, settings: Settings) -> int:
     text = asyncio.run(transcribe_safely(transcriber, args.audio))
     if text is None:
         return 1
-    print(text)
-    findings = scan(text)
-    if findings:
-        print(f"\nAviso: {describe(findings)}", file=sys.stderr)
+    print(_shown_transcript(text))
     return 0
 
 
@@ -214,7 +227,7 @@ def cmd_eval_run(args: argparse.Namespace, settings: Settings) -> int:
     def progress(question_id: str) -> None:
         print(f"  lista {question_id}", file=sys.stderr)
 
-    paths = asyncio.run(
+    outcome = asyncio.run(
         run_evaluation(
             bank,
             pipeline,
@@ -227,8 +240,16 @@ def cmd_eval_run(args: argparse.Namespace, settings: Settings) -> int:
         )
     )
     print("Corrida lista:")
-    for path in paths:
+    for path in outcome.paths:
         print(f"  {path}")
+    failed = sorted({qid for ids in outcome.failed.values() for qid in ids})
+    if failed:
+        print(
+            f"Aviso: {len(failed)} preguntas fallaron por error del modelo "
+            f"({', '.join(failed)}). Vuelve a correrlas en otra carpeta antes de "
+            "calificar; el puntaje las excluye.",
+            file=sys.stderr,
+        )
     print(
         "Comparte solo ciego.csv (una copia por calificadora). Guarda clave.csv "
         "aparte; citas.csv se califica después."

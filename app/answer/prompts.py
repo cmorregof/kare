@@ -35,8 +35,8 @@ Reglas que no se negocian:
 1. Cada afirmación debe poder comprobarse leyendo solo los pasajes que cita. Si \
 un dato no está en los pasajes, no lo escribas, aunque lo sepas.
 2. Cita en el campo citations con los identificadores exactos de los pasajes, \
-por ejemplo "P2". No pongas marcas de cita dentro del texto ni inventes \
-identificadores.
+por ejemplo "P2". No pongas marcas de cita dentro del texto, no menciones los \
+pasajes ("según el pasaje") y no inventes identificadores.
 3. No escribas dosis, frecuencias, vías, umbrales ni cifras que no aparezcan en \
 el pasaje citado. Copia las cifras tal como están.
 4. Si los pasajes no responden la pregunta, abstente (abstain = true) y explica \

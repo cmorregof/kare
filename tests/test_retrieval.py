@@ -63,3 +63,12 @@ def test_low_coverage_passages_are_filtered() -> None:
     # Solo "hidromorfona" coincide: 1 de 4 términos no alcanza el umbral.
     query = Query("es", "hidromorfona prurito urticaria exantema")
     assert retriever.search([query], min_coverage=0.3) == []
+
+
+def test_single_word_queries_never_pass_the_gate() -> None:
+    # Hallazgo de la revisión independiente: una consulta de una palabra
+    # ("pacientes") abría la puerta al generador en preguntas fuera del corpus.
+    retriever = synthetic_retriever()
+    assert retriever.search([Query("es", "pacientes")]) == []
+    plan = [Query("es", "vacuna fiebre amarilla"), Query("es", "pacientes")]
+    assert retriever.search(plan) == []

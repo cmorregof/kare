@@ -48,10 +48,16 @@ _LABEL_NUMBER = re.compile(r"\d+")
 NO_PASSAGES = "No encontré pasajes pertinentes en el corpus para esta pregunta."
 NO_MODEL = "No hay modelo configurado: solo se muestran los pasajes recuperados."
 NO_SUPPORT = "Ninguna afirmación quedó sustentada por los pasajes del corpus."
+NOT_COVERED = "El corpus no responde esta pregunta con suficiente respaldo."
+PARTLY_COVERED = "Solo una parte de la pregunta quedó sustentada por el corpus."
 GENERATION_FAILED = "No se pudo generar una respuesta; intenta de nuevo."
 VERIFICATION_FAILED = (
     "No se pudo verificar la respuesta; por seguridad no se muestra. Intenta de nuevo."
 )
+
+# Si el verificador repite una afirmación con veredictos distintos, gana el
+# más severo.
+_SEVERITY = {"supported": 0, "partial": 1, "unsupported": 2}
 
 
 @dataclass(frozen=True)
@@ -192,22 +198,37 @@ class EvidencePipeline:
         by_label = {f"P{number}": p for number, p in enumerate(passages, start=1)}
         candidates: list[_Candidate] = []
         discarded: list[VerifiedClaim] = []
-        for claim in draft.claims[: self._config.max_claims]:
+        for index, claim in enumerate(draft.claims):
             text = strip_citation_marks(claim.text)
             if not text:
                 continue
-            cited = tuple(
-                by_label[label]
-                for label in parse_labels(claim.citations)
-                if label in by_label
-            )
-            if not cited:
+            if index >= self._config.max_claims:
                 discarded.append(
                     VerifiedClaim(
                         text=text,
                         label="unsupported",
+                        rationale="Excede el máximo de afirmaciones por respuesta.",
+                    )
+                )
+                continue
+            labels = parse_labels(claim.citations)
+            unknown = [label for label in labels if label not in by_label]
+            cited = tuple(by_label[label] for label in labels if label in by_label)
+            if not cited or unknown:
+                # Citar un pasaje que no existe delata una afirmación inventada,
+                # aunque también cite uno real.
+                rationale = (
+                    f"Cita pasajes que no existen: {', '.join(unknown)}."
+                    if unknown
+                    else "No cita ninguno de los pasajes recuperados."
+                )
+                discarded.append(
+                    VerifiedClaim(
+                        text=text,
+                        chunk_ids=[p.chunk_id for p in cited],
+                        label="unsupported",
                         decided_by=Stage.CITATIONS,
-                        rationale="No cita ninguno de los pasajes recuperados.",
+                        rationale=rationale,
                     )
                 )
                 continue
@@ -245,7 +266,9 @@ class EvidencePipeline:
         )
         verdicts: dict[int, SupportVerdict] = {}
         for verdict in report.verdicts:
-            verdicts.setdefault(verdict.claim_index, verdict)
+            current = verdicts.get(verdict.claim_index)
+            if current is None or _SEVERITY[verdict.label] > _SEVERITY[current.label]:
+                verdicts[verdict.claim_index] = verdict
         kept: list[VerifiedClaim] = []
         rejected: list[VerifiedClaim] = []
         for number, candidate in enumerate(candidates, start=1):
@@ -283,12 +306,16 @@ class EvidencePipeline:
         passages: list[Passage],
         model: str,
     ) -> FinalAnswer:
-        model_reason = (draft.abstain_reason or "").strip() or None
+        # El motivo que da el modelo es texto libre sin verificar: puede traer
+        # justo la dosis inventada que el resto del pipeline bloquea. Se guarda
+        # como nota y el usuario ve solo textos fijos del sistema.
+        model_note = (draft.abstain_reason or "").strip() or None
         if not kept:
             return FinalAnswer(
                 question=question,
                 status=AnswerStatus.ABSTAINED,
-                reason=model_reason if draft.abstain and model_reason else NO_SUPPORT,
+                reason=NOT_COVERED if draft.abstain else NO_SUPPORT,
+                model_note=model_note,
                 discarded=discarded,
                 passages=passages,
                 model=model,
@@ -304,11 +331,12 @@ class EvidencePipeline:
                 status=AnswerStatus.ANSWERED,
                 claims=kept,
                 passages=passages,
+                model_note=model_note,
                 model=model,
             )
         notes = []
-        if model_reason:
-            notes.append(model_reason)
+        if draft.abstain:
+            notes.append(PARTLY_COVERED)
         if len(discarded) == 1:
             notes.append("Se omitió 1 afirmación sin soporte suficiente.")
         elif discarded:
@@ -322,5 +350,6 @@ class EvidencePipeline:
             discarded=discarded,
             passages=passages,
             reason=" ".join(notes) or "Respuesta parcialmente sustentada.",
+            model_note=model_note,
             model=model,
         )

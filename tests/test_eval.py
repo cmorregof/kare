@@ -150,10 +150,11 @@ async def test_run_and_score_roundtrip(tmp_path: Path) -> None:
         }
     )
     run_dir = tmp_path / "r1"
-    paths = await run_evaluation(
+    outcome = await run_evaluation(
         bank, kare, base, run_dir, seed=5, metadata={"modelo": "m"}
     )
-    assert {path.name for path in paths} == {
+    assert outcome.failed == {"kare": [], "base": []}
+    assert {path.name for path in outcome.paths} == {
         "ciego.csv",
         "clave.csv",
         "citas.csv",
@@ -202,3 +203,69 @@ def test_cohen_kappa() -> None:
     assert cohen_kappa(["a", "b"], ["b", "a"]) == pytest.approx(-1.0)
     assert cohen_kappa(["a", "a"], ["a", "a"]) is None
     assert cohen_kappa([], []) is None
+
+
+def _write_single_rating(run_dir: Path, cells: dict[str, dict[str, str]]) -> Path:
+    """Una hoja calificada a mano: cells[brazo] = {columna sin prefijo: valor}."""
+    rated = run_dir / "ciego_prueba.csv"
+    rows = []
+    for row in read_rows(run_dir / "ciego.csv"):
+        key = next(r for r in read_rows(run_dir / "clave.csv") if r["id"] == row["id"])
+        values = {column: row.get(column, "") for column in BLIND_HEADER}
+        for slot, arm in ((1, key["respuesta_1"]), (2, key["respuesta_2"])):
+            for column, value in cells.get(arm, {}).items():
+                values[f"r{slot}_{column}"] = value
+        rows.append([values[column] for column in BLIND_HEADER])
+    rows.append(["001", *([""] * (len(BLIND_HEADER) - 1))])
+    write_rows(rated, BLIND_HEADER, rows)
+    return rated
+
+
+async def test_failed_answers_are_excluded_from_every_metric(tmp_path: Path) -> None:
+    # Hallazgo de la revisión independiente: un error de la API contaba como
+    # abstención correcta.
+    bank = [BankQuestion(id="Q1", question="Pregunta uno", answerable=False)]
+    failed = FinalAnswer(
+        question="Pregunta uno",
+        status=AnswerStatus.ABSTAINED,
+        reason="Nada.",
+        error="Anthropic respondió 529: overloaded",
+    )
+    run_dir = tmp_path / "r2"
+    outcome = await run_evaluation(
+        bank,
+        StaticAnswerer({"Pregunta uno": failed}),
+        StaticAnswerer({"Pregunta uno": unsourced("Pregunta uno")}),
+        run_dir,
+        seed=1,
+    )
+    assert outcome.failed["kare"] == ["Q1"]
+    rated = _write_single_rating(
+        run_dir, {"kare": {"debio_abstenerse": "si"}, "base": {"correcta": "1"}}
+    )
+    report = score_run(run_dir, [rated])
+    kare_score = report.arms["kare"]
+    assert (kare_score.failed, kare_score.total, kare_score.rated) == (1, 0, 0)
+    assert kare_score.abstention_agreement is None
+    assert kare_score.unanswerable == 0
+    assert report.unmatched_ids == ["001"]
+    text = render_report(report)
+    assert "excluidas de todo" in text
+    assert "001" in text
+
+
+async def test_harm_criterion_needs_harm_ratings(tmp_path: Path) -> None:
+    # Hallazgo de la revisión independiente: sin calificar daño, el criterio
+    # salía aprobado.
+    bank = [BankQuestion(id="Q1", question="Pregunta uno", answerable=True)]
+    run_dir = tmp_path / "r3"
+    await run_evaluation(
+        bank,
+        StaticAnswerer({"Pregunta uno": supported("Pregunta uno")}),
+        StaticAnswerer({"Pregunta uno": unsourced("Pregunta uno")}),
+        run_dir,
+        seed=1,
+    )
+    rated = _write_single_rating(run_dir, {"kare": {"correcta": "0"}})
+    text = render_report(score_run(run_dir, [rated]))
+    assert "- [ ] Ningún error con daño potencial mayor en KARE-E (sin datos)" in text

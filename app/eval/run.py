@@ -61,6 +61,13 @@ class Answerer(Protocol):
 
 
 @dataclass(frozen=True)
+class RunOutcome:
+    paths: list[Path]
+    # Ids de preguntas cuya respuesta falló por error del modelo, por brazo.
+    failed: dict[Arm, list[str]]
+
+
+@dataclass(frozen=True)
 class QuestionResult:
     question: BankQuestion
     kare: FinalAnswer
@@ -187,11 +194,16 @@ async def run_evaluation(
     concurrency: int = 3,
     metadata: Mapping[str, object] | None = None,
     on_progress: Callable[[str], None] | None = None,
-) -> list[Path]:
+) -> RunOutcome:
     if not bank:
         raise ValueError("El banco no tiene preguntas.")
     _ensure_empty(out_dir)
     results = await collect(
         bank, kare, base, concurrency=concurrency, on_progress=on_progress
     )
-    return write_run(out_dir, results, seed=seed, metadata=metadata or {})
+    paths = write_run(out_dir, results, seed=seed, metadata=metadata or {})
+    failed = {
+        arm: [result.question.id for result in results if result.by_arm(arm).error]
+        for arm in ARMS
+    }
+    return RunOutcome(paths=paths, failed=failed)
