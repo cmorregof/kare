@@ -26,7 +26,7 @@ SUPPORTED_SUFFIXES = (".pdf", ".txt", ".md")
 @dataclass(frozen=True)
 class IngestReport:
     source_id: str
-    status: Literal["ingerida", "omitida", "retirada", "error"]
+    status: Literal["ingerida", "omitida", "pendiente", "retirada", "error"]
     message: str
     chunks: int = 0
 
@@ -72,7 +72,8 @@ def ingest_source(
         )
     path = corpus_dir / spec.file
     if not path.exists():
-        return IngestReport(spec.id, "error", f"falta el archivo {path}")
+        # Autorizada pero sin archivo todavía: no es un error, queda pendiente.
+        return IngestReport(spec.id, "pendiente", f"falta el archivo {path}")
     if path.suffix.lower() not in SUPPORTED_SUFFIXES:
         return IngestReport(spec.id, "error", f"formato no soportado: {path.suffix}")
     try:

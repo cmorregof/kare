@@ -105,7 +105,7 @@ def test_ingest_respects_licenses_and_withdraws_downgraded_sources(
         assert {r.source_id: r.status for r in reports} == {
             "norma-prueba": "ingerida",
             "guia-pendiente": "omitida",
-            "guia-sin-archivo": "error",
+            "guia-sin-archivo": "pendiente",
         }
         assert set(store.chunk_counts()) == {"norma-prueba"}
         chunk = store.chunks()[0]
