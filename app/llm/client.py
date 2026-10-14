@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import Any, Literal, Protocol, TypeVar
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
 
@@ -61,7 +61,20 @@ def extract_json_object(raw: str) -> dict[str, Any]:
 
 
 def _summarize(exc: Exception) -> str:
-    return " ".join(str(exc).split())[:300]
+    """Qué falló en el formato, sin copiar la salida del modelo.
+
+    Pydantic incluye por defecto el valor rechazado, y ese valor (texto del
+    modelo, derivado de la pregunta) terminaría en los registros del servidor.
+    """
+    if isinstance(exc, ValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc']) or 'objeto'}: "
+            f"{error['msg']}"
+            for error in exc.errors(include_input=False, include_url=False)
+        )
+    else:
+        text = str(exc)
+    return " ".join(text.split())[:300]
 
 
 def _retry_after(response: httpx.Response, fallback: float) -> float:

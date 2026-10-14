@@ -93,6 +93,21 @@ async def test_two_invalid_outputs_raise() -> None:
         await client.complete_json(system="S", user="U", schema=DraftAnswer)
 
 
+async def test_format_errors_do_not_copy_the_model_output() -> None:
+    # El texto rechazado (derivado de la pregunta) no debe llegar al mensaje
+    # de error, que termina en los registros del servidor del bot.
+    leaked = "texto sintetico derivado de la pregunta"
+    bad = json.dumps({"claims": [{"text": leaked, "citations": "P1"}]})
+    seen: list[httpx.Request] = []
+    client = anthropic([anthropic_text(bad), anthropic_text(bad)], seen)
+    with pytest.raises(LLMError) as failed:
+        await client.complete_json(system="S", user="U", schema=DraftAnswer)
+    assert "claims.0.citations" in str(failed.value)
+    assert leaked not in str(failed.value)
+    retry_prompt = json.loads(seen[1].content)["messages"][0]["content"]
+    assert "claims.0.citations" in retry_prompt
+
+
 async def test_overloaded_api_is_retried() -> None:
     seen: list[httpx.Request] = []
     client = anthropic(
