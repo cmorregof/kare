@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.uv/
+
+# Secretos
+.env
+.env.local
+
+# Datos locales: índice SQLite y corridas de evaluación (con calificaciones)
+data/
+runs/
+
+# Corpus: los documentos no se versionan (licencias); el manifiesto sí
+corpus/fuentes/
+*.pdf
+
+# Banco de preguntas real: no se publica hasta el artículo, para no
+# contaminar modelos futuros. Solo la plantilla va al repositorio.
+eval/*.csv
+!eval/pallqa_es_template.csv
+
+# Audio: nunca al repositorio
+*.ogg
+*.oga
+*.opus
+*.mp3
+*.m4a
+*.wav
+*.webm
+
+# Herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.claude/

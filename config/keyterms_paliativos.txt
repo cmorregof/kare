@@ -1,0 +1,116 @@
+# Términos para el reconocimiento de voz (keyterms de ElevenLabs).
+# Uno por línea; máximo 5 palabras y menos de 50 caracteres; sin < > { } [ ] \
+# Agregar aquí el listado de medicamentos y escalas de la institución.
+
+# Opioides y antagonistas
+morfina
+hidromorfona
+oxicodona
+metadona
+fentanilo
+fentanilo transdérmico
+buprenorfina
+tapentadol
+tramadol
+codeína
+naloxona
+metilnaltrexona
+
+# Coanalgésicos y otros
+paracetamol
+dipirona
+metamizol
+ibuprofeno
+naproxeno
+dexametasona
+gabapentina
+pregabalina
+amitriptilina
+duloxetina
+ketamina
+lidocaína
+ácido zoledrónico
+denosumab
+
+# Síntomas digestivos
+metoclopramida
+ondansetrón
+haloperidol
+butilbromuro de hioscina
+escopolamina
+glicopirronio
+octreotida
+lactulosa
+polietilenglicol
+bisacodilo
+senósidos
+omeprazol
+
+# Delirium, ansiedad, sedación
+levomepromazina
+clorpromazina
+quetiapina
+olanzapina
+midazolam
+lorazepam
+clonazepam
+mirtazapina
+furosemida
+
+# Vías y procedimientos
+vía subcutánea
+hipodermoclisis
+infusor elastomérico
+bomba de infusión
+toracocentesis
+paracentesis
+rotación de opioides
+dosis equianalgésica
+
+# Síndromes y síntomas
+dolor irruptivo
+dolor neuropático
+neurotoxicidad por opioides
+sedación paliativa
+síntomas refractarios
+delirium
+disnea
+estertores premortem
+náuseas y vómitos
+obstrucción intestinal maligna
+estreñimiento inducido por opioides
+compresión medular
+hipercalcemia
+caquexia
+anorexia
+astenia
+mucositis
+linfedema
+úlcera tumoral
+ascitis
+derrame pleural
+
+# Escalas
+ESAS
+escala de Edmonton
+Palliative Performance Scale
+PPS
+Karnofsky
+ECOG
+PaP score
+PPI
+NECPAL
+SPICT
+Barthel
+Zarit
+
+# Decisiones y familia
+voluntad anticipada
+adecuación del esfuerzo terapéutico
+planificación anticipada de decisiones
+últimos días de vida
+conspiración del silencio
+claudicación familiar
+cuidador principal
+duelo
+Ley Consuelo Devis Saavedra

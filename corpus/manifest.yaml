@@ -1,0 +1,114 @@
+# Manifiesto del corpus de KARE-E.
+#
+# Cada fuente declara de dónde viene y bajo qué condiciones se usa.
+# `kare ingerir` solo indexa fuentes con license_status "abierta" o
+# "uso_interno"; las demás quedan listadas pero fuera del índice. Si una
+# fuente baja de categoría, la siguiente ingesta completa la retira.
+#
+# Los archivos van en corpus/fuentes/ y no se versionan (ver .gitignore).
+# Formatos: .pdf, .txt, .md. Un PDF escaneado necesita OCR antes.
+#
+# license_status:
+#   abierta        licencia abierta verificada (CC, dominio público, norma pública)
+#   uso_interno    términos leídos que permiten indexarla para uso interno, sin redistribuir
+#   por_verificar  no se indexa hasta leer los términos de uso
+#   restringida    no se indexa: requiere permiso escrito o licencia
+#
+# kind: guia | norma | consenso | revision | protocolo
+# reviewed_on: fecha (AAAA-MM-DD) en que alguien leyó los términos de uso.
+# Semana 1 del sprint: verificar cada "por_verificar" y llenar reviewed_on.
+
+sources:
+  - id: oms-dolor-cancer-2018
+    title: "WHO guidelines for the pharmacological and radiotherapeutic management of cancer pain in adults and adolescents"
+    publisher: Organización Mundial de la Salud
+    year: 2018
+    jurisdiction: internacional
+    kind: guia
+    language: en
+    file: oms_dolor_cancer_2018.pdf
+    url: https://www.ncbi.nlm.nih.gov/books/NBK537492/
+    license_status: abierta
+    license_note: "CC BY-NC-SA 3.0 IGO: uso no comercial con atribución; las adaptaciones llevan la misma licencia."
+
+  - id: minsalud-gpc58-paliativos-2016
+    title: "Guía de Práctica Clínica para la atención de pacientes en cuidado paliativo (GPC 58)"
+    publisher: Ministerio de Salud y Protección Social, IETS
+    year: 2016
+    jurisdiction: Colombia
+    kind: guia
+    language: es
+    file: minsalud_gpc58_paliativos_2016.pdf
+    url: https://www.coosalud.com/wp-content/uploads/2019/03/Guias_practica_clinica/Version_cortapaliativo2016_04_20.pdf
+    license_status: por_verificar
+    license_note: "Documento público del Ministerio; confirmar condiciones de reutilización. El enlace es la versión corta alojada por Coosalud: buscar la completa en el repositorio del Ministerio."
+
+  - id: minsalud-gpc65-opioides-2022
+    title: "GPC 65: opioides en dolor crónico no oncológico, adultos y pediatría"
+    publisher: Ministerio de Salud y Protección Social
+    year: 2022
+    jurisdiction: Colombia
+    kind: guia
+    language: es
+    file: minsalud_gpc65_opioides_2022.pdf
+    url: https://www.minsalud.gov.co/sites/rid/Lists/BibliotecaDigital/RIDE/VS/MET/FNE/gpc-65-opioides-dolor-cronico-no-onco-adultos-pediatria-co-vpc.pdf
+    license_status: por_verificar
+    license_note: "Pública. Solo para seguridad en el uso de opioides: no es una guía oncológica."
+
+  - id: ley-1733-2014
+    title: "Ley 1733 de 2014 (Ley Consuelo Devis Saavedra), cuidados paliativos"
+    publisher: Congreso de la República de Colombia
+    year: 2014
+    jurisdiction: Colombia
+    kind: norma
+    language: es
+    file: ley_1733_2014.txt
+    license_status: abierta
+    license_note: "Norma pública. Copiar el texto vigente desde una fuente oficial a un .txt."
+
+  - id: res-2665-2018
+    title: "Resolución 2665 de 2018, documento de voluntad anticipada"
+    publisher: Ministerio de Salud y Protección Social
+    year: 2018
+    jurisdiction: Colombia
+    kind: norma
+    language: es
+    file: res_2665_2018.pdf
+    license_status: abierta
+    license_note: "Norma pública."
+
+  - id: oncologos-occidente-protocolos
+    title: "Protocolos institucionales de cuidado paliativo"
+    publisher: Oncólogos de Occidente
+    jurisdiction: institucional
+    kind: protocolo
+    language: es
+    file: oncologos_occidente_protocolos.pdf
+    license_status: restringida
+    license_note: "Solo con autorización escrita de la institución."
+
+  - id: nccn-palliative-care
+    title: "NCCN Guidelines: Palliative Care"
+    publisher: National Comprehensive Cancer Network
+    jurisdiction: Estados Unidos
+    kind: guia
+    language: en
+    file: nccn_palliative_care.pdf
+    url: https://www.nccn.org/about/permissions
+    license_status: restringida
+    license_note: "Exige permiso escrito para copiar, adaptar o crear obras derivadas."
+
+# Plantilla para guías ESMO o ASCO de acceso abierto. Muchas son CC BY-NC-ND:
+# leer la licencia de cada artículo antes de pasarla a "abierta" o "uso_interno".
+#
+#  - id: esmo-<tema>-<año>
+#    title: "..."
+#    publisher: ESMO
+#    year: 2026
+#    jurisdiction: internacional
+#    kind: guia
+#    language: en
+#    file: esmo_<tema>_<año>.pdf
+#    url: https://doi.org/...
+#    license_status: por_verificar
+#    license_note: ""

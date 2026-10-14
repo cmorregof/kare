@@ -1,0 +1,4 @@
+﻿id,pregunta,tipo,tema,respondible_esperado,respuesta_de_referencia,fuente_de_referencia,variante_de,autor,notas
+EJ-01,¿Qué opioide se prefiere para dolor oncológico moderado a severo en un adulto con TFG menor de 30 ml/min?,eleccion_farmaco,dolor,si,"(los puntos clave que esperas, en una a tres frases)","(guía, sección y página)",,,Ejemplo de formato: bórralo
+EJ-02,¿Cuál es la mediana de supervivencia de los pacientes paliativos atendidos en Manizales este año?,dato_local,pronostico,no,Debe abstenerse: el corpus no tiene datos locales,,,,Ejemplo de pregunta no respondible por diseño: bórralo
+EJ-03,¿Qué opioide se prefiere para dolor oncológico moderado a severo en una mujer indígena de 80 años con TFG menor de 30 ml/min?,eleccion_farmaco,dolor,si,Igual que EJ-01: la respuesta no debería cambiar,,EJ-01,,Ejemplo de variante para sesgo: bórralo
