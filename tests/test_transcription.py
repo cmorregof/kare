@@ -1,9 +1,14 @@
 from pathlib import Path
 
 import httpx
+import pytest
 
+from app.core.config import Settings
 from app.transcription import (
     ElevenLabsTranscriber,
+    TranscriptionError,
+    WhisperTranscriber,
+    get_transcriber,
     load_keyterms,
     transcribe_safely,
 )
@@ -63,6 +68,48 @@ async def test_transcribe_safely_never_raises() -> None:
             raise RuntimeError("sin red")
 
     assert await transcribe_safely(Broken(), "nota.m4a") is None
+
+
+def test_whisper_fallback_never_sends_another_providers_key() -> None:
+    # Hallazgo de la revisión del bot: con OPENAI_API_KEY de OpenRouter, el
+    # respaldo mandaba esa clave y el audio a api.openai.com.
+    # Cada campo que decide va explícito: así ni el entorno ni un .env real
+    # cambian el resultado.
+    whisper = "https://api.openai.com/v1"
+    elsewhere = Settings(
+        elevenlabs_api_key="",
+        openai_api_key="clave-de-otro-proveedor",
+        openai_base_url="https://openrouter.example/api/v1",
+        whisper_base_url=whisper,
+    )
+    assert get_transcriber(elsewhere) is None
+    openai = Settings(
+        elevenlabs_api_key="",
+        openai_api_key="clave-de-openai",
+        openai_base_url=whisper,
+        whisper_base_url=whisper,
+    )
+    assert isinstance(get_transcriber(openai), WhisperTranscriber)
+
+
+async def test_transcription_errors_do_not_copy_the_response_body(
+    tmp_path: Path,
+) -> None:
+    audio = tmp_path / "pregunta.m4a"
+    audio.write_bytes(b"audio-de-prueba")
+    leaked = "transcripcion sintetica"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        detail = {"status": "invalid", "message": "bad audio", "echo": leaked}
+        return httpx.Response(422, json={"detail": detail})
+
+    transcriber = ElevenLabsTranscriber(
+        api_key="clave", transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(TranscriptionError) as failed:
+        await transcriber.transcribe(str(audio))
+    assert "HTTP 422 (invalid: bad audio)" in str(failed.value)
+    assert leaked not in str(failed.value)
 
 
 async def test_zero_retention_is_opt_in(tmp_path: Path) -> None:

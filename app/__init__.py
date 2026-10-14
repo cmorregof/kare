@@ -1,3 +1,3 @@
 """KARE: historia clínica paliativa asistida y evidencia citada, en español."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

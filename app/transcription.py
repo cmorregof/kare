@@ -19,6 +19,7 @@ from typing import Protocol, runtime_checkable
 import httpx
 
 from app.core.config import Settings
+from app.core.http_errors import describe_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class ElevenLabsTranscriber:
             )
         if response.status_code != 200:
             raise TranscriptionError(
-                f"ElevenLabs respondió {response.status_code}: {response.text[:300]}"
+                f"ElevenLabs respondió {describe_error_response(response)}"
             )
         text = response.json().get("text")
         if not isinstance(text, str):
@@ -172,12 +173,16 @@ class WhisperTranscriber:
             )
         if response.status_code != 200:
             raise TranscriptionError(
-                f"Whisper respondió {response.status_code}: {response.text[:300]}"
+                f"Whisper respondió {describe_error_response(response)}"
             )
         text = response.json().get("text")
         if not isinstance(text, str):
             raise TranscriptionError("Whisper: respuesta sin texto.")
         return text.strip()
+
+
+def _same_host(first: str, second: str) -> bool:
+    return httpx.URL(first).host == httpx.URL(second).host
 
 
 def get_transcriber(settings: Settings) -> Transcriber | None:
@@ -193,7 +198,12 @@ def get_transcriber(settings: Settings) -> Transcriber | None:
             timeout=settings.transcription_timeout_seconds,
             zero_retention=settings.elevenlabs_zero_retention,
         )
-    if settings.openai_api_key:
+    if settings.openai_api_key and _same_host(
+        settings.openai_base_url, settings.whisper_base_url
+    ):
+        # Solo si la clave es del mismo servidor de Whisper: OPENAI_API_KEY puede
+        # ser de OpenRouter o Groq, y mandarla (con el audio) a OpenAI sería
+        # entregarle la clave y la nota a un tercero.
         # Whisper admite un prompt corto con vocabulario; unos pocos términos bastan.
         return WhisperTranscriber(
             api_key=settings.openai_api_key,

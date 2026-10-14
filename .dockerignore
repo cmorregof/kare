@@ -1,23 +1,25 @@
-# Nada de secretos, datos, corpus ni audio en la imagen.
+# Nada de secretos, datos, corpus ni audio en la imagen. Los patrones llevan
+# **/ porque app/ y config/ se copian enteras.
 .git
-.env
-.env.*
 .venv
 data/
 runs/
 corpus/fuentes/
 eval/
 tests/
-*.pdf
-*.ogg
-*.oga
-*.opus
-*.mp3
-*.m4a
-*.wav
-*.webm
+.claude
+**/.env
+**/.env.*
+**/*.pdf
+**/*.ogg
+**/*.oga
+**/*.opus
+**/*.mp3
+**/*.m4a
+**/*.wav
+**/*.webm
+**/*.db
 **/__pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
-.claude

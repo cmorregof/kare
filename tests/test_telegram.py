@@ -25,13 +25,26 @@ TOKEN = "123456:TOKEN-SINTETICO-DE-PRUEBA"
 ALLOWED = 1001
 STRANGER = 2002
 SYNTHETIC_ID = "1053456789"  # número inventado, como en las pruebas de la guardia
+NOW = 1_800_000_000
+
+_DESCRIPTIONS = {
+    400: "Bad Request: message can't be deleted",
+    401: "Unauthorized",
+    409: "Conflict: terminated by other getUpdates request",
+}
 
 
 class FakeTelegram:
-    def __init__(self, *, reject_html: bool = False, fail: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        reject_html: bool = False,
+        failures: dict[str, list[int]] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.reject_html = reject_html
-        self.fail = fail
+        # Por método, los códigos HTTP con que fallan sus próximas llamadas.
+        self.failures = failures or {}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -40,9 +53,11 @@ class FakeTelegram:
         method = path.rsplit("/", 1)[-1]
         payload = json.loads(request.content or b"{}")
         self.calls.append((method, payload))
-        if method == self.fail:
+        pending = self.failures.get(method)
+        if pending:
+            status = pending.pop(0)
             return httpx.Response(
-                401, json={"ok": False, "description": "Unauthorized"}
+                status, json={"ok": False, "description": _DESCRIPTIONS[status]}
             )
         if self.reject_html and method == "sendMessage" and "parse_mode" in payload:
             return httpx.Response(
@@ -51,6 +66,8 @@ class FakeTelegram:
             )
         if method == "getFile":
             result: Any = {"file_path": "voice/nota.oga", "file_size": 15}
+        elif method == "getUpdates":
+            result = []
         else:
             result = True
         return httpx.Response(200, json={"ok": True, "result": result})
@@ -113,6 +130,8 @@ ANSWER = FinalAnswer(
     model="modelo-falso",
 )
 
+VOICE = {"file_id": "f1", "duration": 5, "mime_type": "audio/ogg"}
+
 
 def message(
     text: str | None = None,
@@ -120,11 +139,16 @@ def message(
     user_id: int = ALLOWED,
     chat_type: str = "private",
     voice: dict[str, Any] | None = None,
+    date: int = NOW,
+    message_id: int = 7,
+    **extra: Any,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "message_id": 7,
+        "message_id": message_id,
+        "date": date,
         "chat": {"id": user_id, "type": chat_type},
         "from": {"id": user_id},
+        **extra,
     }
     if text is not None:
         body["text"] = text
@@ -142,7 +166,11 @@ def bot(
     return KareBot(
         telegram.api(),
         answerer,
-        BotConfig(allowed_users=frozenset({ALLOWED}), max_question_chars=200),
+        BotConfig(
+            allowed_users=frozenset({ALLOWED}),
+            max_question_chars=200,
+            retry_seconds=0.0,
+        ),
         sources_text="<b>Fuentes indexadas</b>",
         transcriber=transcriber,
     )
@@ -194,19 +222,81 @@ async def test_identifiers_are_deleted_and_never_repeated() -> None:
     assert ("deleteMessage", {"chat_id": ALLOWED, "message_id": 7}) in telegram.calls
     [reply] = telegram.sent()
     assert reply.startswith("<b>Pregunta bloqueada</b>")
-    assert "Borré tu mensaje" in reply
+    assert reply.endswith("Borré tu mensaje de este chat.")
     assert SYNTHETIC_ID not in reply
 
 
-async def test_long_texts_are_not_processed() -> None:
+async def test_identifiers_in_commands_and_captions_are_deleted_too() -> None:
     telegram = FakeTelegram()
     answerer = RecordingAnswerer(ANSWER)
     kare = bot(telegram, answerer)
-    await kare.handle_update(message("Nota clínica sintética. " * 20))
+    await kare.handle_update(message(f"/start paciente con CC {SYNTHETIC_ID}"))
+    await kare.handle_update(
+        message(photo=[{"file_id": "p1"}], caption=f"CC {SYNTHETIC_ID}", message_id=8)
+    )
+    await kare.handle_update(message(f"/id CC {SYNTHETIC_ID}", message_id=9))
+    assert telegram.methods().count("deleteMessage") == 3
+    assert all(
+        reply.startswith("<b>Pregunta bloqueada</b>") for reply in telegram.sent()
+    )
+    assert not any(SYNTHETIC_ID in reply for reply in telegram.sent())
     assert answerer.questions == []
-    assert "muy larga" in telegram.sent()[-1]
-    assert "deleteMessage" not in telegram.methods()
-    await kare.handle_update(message("Nota sintética. " * 15 + f"CC {SYNTHETIC_ID}"))
+
+
+async def test_files_are_deleted_without_processing() -> None:
+    telegram = FakeTelegram()
+    answerer = RecordingAnswerer(ANSWER)
+    await bot(telegram, answerer).handle_update(
+        message(document={"file_id": "d1", "file_name": "resultado.pdf"})
+    )
+    assert answerer.questions == []
+    assert "getFile" not in telegram.methods()
+    assert "deleteMessage" in telegram.methods()
+    assert telegram.sent()[0].startswith("<b>Archivo no procesado</b>")
+
+
+async def test_a_failed_deletion_asks_the_user_to_delete() -> None:
+    telegram = FakeTelegram(failures={"deleteMessage": [400, 400]})
+    kare = bot(
+        telegram,
+        RecordingAnswerer(ANSWER),
+        transcriber=FakeTranscriber(f"Paciente con cédula {SYNTHETIC_ID}"),
+    )
+    await kare.handle_update(message(f"CC {SYNTHETIC_ID}, ¿qué opioide?"))
+    await kare.handle_update(message(voice=VOICE, message_id=8))
+    text_reply, voice_reply = telegram.sent()
+    for reply in (text_reply, voice_reply):
+        assert reply.endswith("No pude borrarlo: bórralo tú del chat.")
+        assert "Borré" not in reply
+        assert SYNTHETIC_ID not in reply
+
+
+async def test_long_texts_and_their_split_tail_are_deleted() -> None:
+    telegram = FakeTelegram()
+    answerer = RecordingAnswerer(ANSWER)
+    kare = bot(telegram, answerer)
+    # Telegram parte un texto de más de 4096 caracteres en mensajes seguidos:
+    # el primero pasa del límite y la cola, corta, llega un segundo después.
+    await kare.handle_update(message("Nota clínica sintética. " * 20, message_id=10))
+    await kare.handle_update(
+        message("cola corta sintética", date=NOW + 1, message_id=11)
+    )
+    assert answerer.questions == []
+    deleted = [p["message_id"] for m, p in telegram.calls if m == "deleteMessage"]
+    assert deleted == [10, 11]
+    assert telegram.sent()[0].startswith("<b>Mensaje muy largo</b>")
+    assert telegram.sent()[1].startswith("<b>Continuación de un mensaje largo</b>")
+    # Pasada la ventana, una pregunta corta se responde normalmente.
+    await kare.handle_update(message("¿Qué opioide?", date=NOW + 60, message_id=12))
+    assert answerer.questions == ["¿Qué opioide?"]
+
+
+async def test_long_text_with_identifiers_is_deleted_without_echo() -> None:
+    telegram = FakeTelegram()
+    answerer = RecordingAnswerer(ANSWER)
+    await bot(telegram, answerer).handle_update(
+        message("Nota sintética. " * 15 + f"CC {SYNTHETIC_ID}")
+    )
     assert answerer.questions == []
     assert "deleteMessage" in telegram.methods()
     assert SYNTHETIC_ID not in telegram.sent()[-1]
@@ -214,8 +304,7 @@ async def test_long_texts_are_not_processed() -> None:
 
 async def test_voice_needs_a_transcriber() -> None:
     telegram = FakeTelegram()
-    voice = {"file_id": "f1", "duration": 5, "mime_type": "audio/ogg"}
-    await bot(telegram, RecordingAnswerer(ANSWER)).handle_update(message(voice=voice))
+    await bot(telegram, RecordingAnswerer(ANSWER)).handle_update(message(voice=VOICE))
     assert telegram.sent() == [
         "Las notas de voz no están activadas. Escribe la pregunta."
     ]
@@ -226,9 +315,8 @@ async def test_a_dictated_question_is_transcribed_and_answered() -> None:
     answerer = RecordingAnswerer(ANSWER)
     heard = "¿Qué opioide se prefiere en insuficiencia renal grave?"
     transcriber = FakeTranscriber(heard)
-    voice = {"file_id": "f1", "duration": 5, "mime_type": "audio/ogg"}
     await bot(telegram, answerer, transcriber=transcriber).handle_update(
-        message(voice=voice)
+        message(voice=VOICE)
     )
     assert transcriber.audio == [b"audio sintetico"]
     assert answerer.questions == [heard]
@@ -239,21 +327,36 @@ async def test_a_dictated_identifier_is_deleted_and_not_echoed() -> None:
     telegram = FakeTelegram()
     answerer = RecordingAnswerer(ANSWER)
     transcriber = FakeTranscriber(f"La paciente con cédula {SYNTHETIC_ID} tiene dolor")
-    voice = {"file_id": "f1", "duration": 5, "mime_type": "audio/ogg"}
     await bot(telegram, answerer, transcriber=transcriber).handle_update(
-        message(voice=voice)
+        message(voice=VOICE)
     )
     assert answerer.questions == []
     assert "deleteMessage" in telegram.methods()
     [reply] = telegram.sent()
     assert reply.startswith("<b>Nota de voz bloqueada</b>")
+    assert reply.endswith("Borré tu mensaje de este chat.")
     assert SYNTHETIC_ID not in reply
+
+
+async def test_a_long_dictation_is_deleted_and_not_echoed() -> None:
+    telegram = FakeTelegram()
+    answerer = RecordingAnswerer(ANSWER)
+    dictated = "Dictado clínico sintético sin identificadores. " * 10
+    transcriber = FakeTranscriber(dictated)
+    await bot(telegram, answerer, transcriber=transcriber).handle_update(
+        message(voice=VOICE)
+    )
+    assert answerer.questions == []
+    assert "deleteMessage" in telegram.methods()
+    [reply] = telegram.sent()
+    assert reply.startswith("<b>Nota muy larga</b>")
+    assert "Dictado clínico" not in reply
 
 
 async def test_long_voice_notes_are_refused_before_downloading() -> None:
     telegram = FakeTelegram()
     transcriber = FakeTranscriber("no debería oírse")
-    voice = {"file_id": "f1", "duration": 600, "mime_type": "audio/ogg"}
+    voice = {**VOICE, "duration": 600}
     await bot(
         telegram, RecordingAnswerer(ANSWER), transcriber=transcriber
     ).handle_update(message(voice=voice))
@@ -284,12 +387,28 @@ async def test_a_failure_is_reported_without_logging_the_question(
     assert "RuntimeError" in caplog.text
 
 
+async def test_polling_survives_conflicts_and_stops_on_a_bad_token() -> None:
+    # 409: otra copia lee el mismo token (o quedó un webhook): se avisa, se
+    # borra el webhook y se reintenta. 401: token inválido: se detiene.
+    telegram = FakeTelegram(failures={"getUpdates": [409, 401]})
+    with pytest.raises(TelegramError) as stopped:
+        await bot(telegram, RecordingAnswerer(ANSWER)).run()
+    assert stopped.value.status == 401
+    assert telegram.methods() == [
+        "deleteWebhook",
+        "getUpdates",
+        "deleteWebhook",
+        "getUpdates",
+    ]
+
+
 async def test_api_errors_never_carry_the_token() -> None:
-    telegram = FakeTelegram(fail="sendMessage")
+    telegram = FakeTelegram(failures={"sendMessage": [401]})
     with pytest.raises(TelegramError) as rejected:
         await telegram.api().send_message(ALLOWED, "hola")
     assert TOKEN not in str(rejected.value)
     assert "Unauthorized" in str(rejected.value)
+    assert rejected.value.status == 401
 
     def unreachable(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(f"no se pudo conectar a {request.url}")
@@ -329,6 +448,21 @@ def test_long_answers_are_split_without_breaking_the_markup() -> None:
     assert len(sources) > 1
     for part in sources:
         assert part.count("<blockquote expandable>") == part.count("</blockquote>") == 1
+
+
+def test_an_oversized_claim_continues_instead_of_losing_its_citations() -> None:
+    huge = VerifiedClaim(
+        text="Afirmación sintética enorme. " + "palabra " * 900,
+        chunk_ids=["guia-a:p12:c0"],
+        label="partial",
+    )
+    answer = ANSWER.model_copy(update={"claims": [huge]})
+    parts = render_telegram(answer)
+    body = "\n\n".join(part for part in parts if not part.startswith("<b>Fuentes"))
+    assert "recortado" not in body
+    assert body.count("palabra") == 900
+    assert "<i>(parcialmente sustentada)</i> [1]" in body
+    assert all(len(part.encode("utf-16-le")) // 2 <= MESSAGE_LIMIT for part in parts)
 
 
 def test_allowed_users_are_parsed_strictly() -> None:

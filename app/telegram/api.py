@@ -19,6 +19,10 @@ MESSAGE_LIMIT = 4096
 class TelegramError(RuntimeError):
     """Falla de Telegram; el mensaje nunca incluye el token."""
 
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
 
 class TelegramAPI:
     def __init__(
@@ -50,7 +54,8 @@ class TelegramAPI:
             payload = response.json()
         except ValueError:
             raise TelegramError(
-                f"{method}: respuesta inválida (HTTP {response.status_code})"
+                f"{method}: respuesta inválida (HTTP {response.status_code})",
+                status=response.status_code,
             ) from None
         if not isinstance(payload, dict) or not payload.get("ok"):
             description = (
@@ -59,7 +64,8 @@ class TelegramAPI:
                 else "sin detalle"
             )
             raise TelegramError(
-                f"{method}: {description} (HTTP {response.status_code})"
+                f"{method}: {description} (HTTP {response.status_code})",
+                status=response.status_code,
             )
         return payload.get("result")
 

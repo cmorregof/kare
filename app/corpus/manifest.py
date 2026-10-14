@@ -35,7 +35,9 @@ class SourceSpec(BaseModel):
     jurisdiction: str
     kind: SourceKind
     language: Language
-    file: str
+    # Solo un nombre de archivo dentro de la carpeta del corpus: nada de rutas
+    # absolutas ni "../", que harían escribir a `kare descargar` fuera de ella.
+    file: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     url: str | None = None
     # Enlace directo al archivo, para `kare descargar` (por ejemplo en el
     # servidor del bot). Va con el sha256 de la versión revisada: si el archivo

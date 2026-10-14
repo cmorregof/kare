@@ -5,10 +5,13 @@ el bot los lea. Por eso:
 
 - Solo responde a los IDs autorizados. A cualquier otro le dice su ID y nada
   más; su mensaje no pasa por la guardia ni por el modelo.
-- La guardia de identificadores corre antes de cualquier llamada al modelo.
-  Si un mensaje trae identificadores, el bot lo borra del chat, no lo procesa
-  y no repite el dato en su respuesta.
-- Una pregunta muy larga suele ser una nota clínica pegada: no se procesa.
+- La guardia corre sobre todo texto (pregunta, comando o pie de foto) antes de
+  cualquier otra cosa. Si encuentra identificadores, el bot borra el mensaje
+  del chat, no lo procesa y no repite el dato. Si no logra borrarlo, lo dice.
+- Un texto muy largo suele ser una nota clínica pegada: se borra sin
+  procesarlo, y también los pedazos en que Telegram parte un texto de más de
+  4096 caracteres, que llegan seguidos como mensajes aparte.
+- Imágenes, documentos y otros archivos no se procesan y se borran.
 - El registro (que en el servidor ve quien administre el despliegue) nunca
   lleva el texto de una pregunta, una respuesta ni una transcripción: solo
   estados, conteos y tiempos.
@@ -19,6 +22,7 @@ import contextlib
 import logging
 import mimetypes
 import re
+import signal
 import tempfile
 import time
 import traceback
@@ -45,26 +49,44 @@ PRIVATE = (
 )
 YOUR_ID = "Tu ID de Telegram es {user_id}."
 UNKNOWN_COMMAND = "No conozco ese comando. Escribe /ayuda."
-ONLY_TEXT = (
-    "Solo entiendo preguntas escritas o notas de voz; no proceso imágenes ni "
-    "documentos. Si lo que enviaste trae datos de un paciente, bórralo del chat."
-)
-TOO_LONG = (
-    "La pregunta es muy larga ({length} caracteres; el máximo es {limit}). "
-    "Escribe una pregunta corta y general, sin notas clínicas."
-)
 DELETED = "Borré tu mensaje de este chat."
+NOT_DELETED = "No pude borrarlo: bórralo tú del chat."
+BLOCKED = "<b>Pregunta bloqueada</b>\n{reason}"
+TOO_LONG = (
+    "<b>Mensaje muy largo</b>\n"
+    "Tiene {length} caracteres y el máximo para una pregunta es {limit}. Un texto "
+    "así suele ser una nota clínica, que no debe ir aquí. Escribe una pregunta "
+    "corta y general."
+)
+CONTINUATION = (
+    "<b>Continuación de un mensaje largo</b>\n"
+    "Telegram partió un texto largo en varios mensajes; este tampoco lo proceso."
+)
+NOT_PROCESSED = (
+    "<b>Archivo no procesado</b>\n"
+    "Solo respondo preguntas escritas o notas de voz; no proceso imágenes, "
+    "documentos ni otros archivos, por si traen datos de un paciente."
+)
 NO_VOICE = "Las notas de voz no están activadas. Escribe la pregunta."
 VOICE_TOO_LONG = "La nota dura más de {limit} segundos. Haz una pregunta corta."
 VOICE_FAILED = "No pude transcribir la nota. Intenta de nuevo o escribe la pregunta."
 VOICE_BLOCKED = (
     "<b>Nota de voz bloqueada</b>\n"
-    "La transcripción trae datos que identifican a una persona ({kinds}). Borré "
-    "la nota de este chat y el texto no se envió al modelo. El audio sí pasó por "
-    "Telegram y por el servicio de transcripción: dicta solo preguntas generales."
+    "La transcripción trae datos que identifican a una persona ({kinds}). El "
+    "texto no se envió al modelo. El audio sí pasó por Telegram y por el servicio "
+    "de transcripción: dicta solo preguntas generales."
+)
+VOICE_TRANSCRIPT_TOO_LONG = (
+    "<b>Nota muy larga</b>\n"
+    "La transcripción tiene {length} caracteres y el máximo para una pregunta es "
+    "{limit}. Haz una pregunta corta y general."
 )
 HEARD = "Escuché: «{text}»"
 FAILED = "No pude responder por un error interno. Intenta de nuevo en un momento."
+
+# Los pedazos de un texto partido por Telegram llegan en el mismo segundo o en
+# el siguiente.
+CONTINUATION_SECONDS = 3
 
 _COMMAND = re.compile(r"^/([a-z_]+)(?:@\w+)?(?:\s|$)", re.IGNORECASE)
 _TAG = re.compile(r"<[^>]+>")
@@ -75,6 +97,12 @@ def welcome(*, voice: bool) -> str:
         "Escribe la pregunta o manda una nota de voz corta."
         if voice
         else "Escribe la pregunta."
+    )
+    audio = (
+        "• Una nota de voz pasa por el servicio de transcripción antes de que yo "
+        "pueda revisarla: dicta solo preguntas generales.\n"
+        if voice
+        else ""
     )
     return (
         "<b>KARE</b> · evidencia citada para cuidados paliativos oncológicos\n\n"
@@ -88,6 +116,7 @@ def welcome(*, voice: bool) -> str:
         "historia. Si detecto algo así, borro el mensaje y no lo proceso.\n"
         "• Lo que escribes pasa por los servidores de Telegram y del modelo de "
         "lenguaje.\n"
+        f"{audio}"
         "• Es apoyo a la decisión: verifica cada afirmación en la fuente citada.\n\n"
         f"{how}\n"
         "/fuentes · documentos que consulto\n"
@@ -126,9 +155,11 @@ class BotConfig:
     allowed_users: frozenset[int]
     max_question_chars: int = 600
     max_voice_seconds: int = 90
-    max_voice_bytes: int = 5 * 1024 * 1024
+    # Una nota de voz de Telegram (Opus) de 90 s pesa unos 300 KB.
+    max_voice_bytes: int = 2 * 1024 * 1024
     poll_timeout: int = 50
     typing_every: float = 4.0
+    retry_seconds: float = 5.0
 
 
 def _where(exc: BaseException) -> str:
@@ -155,6 +186,8 @@ class KareBot:
         self._config = config
         self._sources_text = sources_text
         self._transcriber = transcriber
+        # Por chat: fecha (en segundos) del último texto que pasó del límite.
+        self._last_long: dict[int, int] = {}
 
     async def run(self) -> None:
         # getUpdates no funciona si quedó un webhook configurado.
@@ -164,8 +197,22 @@ class KareBot:
             try:
                 updates = await self._api.get_updates(offset, self._config.poll_timeout)
             except TelegramError as exc:
-                logger.warning("Falló getUpdates (%s); reintento en 5 s.", exc)
-                await asyncio.sleep(5)
+                if exc.status in {401, 403, 404}:
+                    # Token inválido o bot borrado: que el despliegue falle a la
+                    # vista en lugar de reintentar para siempre.
+                    raise
+                if exc.status == 409:
+                    # Quedó un webhook u otra copia del bot lee el mismo token.
+                    logger.warning(
+                        "Conflicto en getUpdates (%s): ¿hay otra copia del bot "
+                        "corriendo con este token?",
+                        exc,
+                    )
+                    with contextlib.suppress(TelegramError):
+                        await self._api.call("deleteWebhook")
+                else:
+                    logger.warning("Falló getUpdates (%s); reintento.", exc)
+                await asyncio.sleep(self._config.retry_seconds)
                 continue
             for update in updates:
                 if not isinstance(update, dict):
@@ -205,19 +252,53 @@ class KareBot:
         if isinstance(text, str):
             match = _COMMAND.match(text.strip())
             command = match.group(1).lower() if match else None
-        if command == "id":
-            await self._send(chat_id, YOUR_ID.format(user_id=user_id))
-            return
         if user_id not in self._config.allowed_users:
+            # A un desconocido solo se le dice su ID: su texto no pasa por la
+            # guardia, el modelo ni nada más.
             logger.info("Mensaje de un ID no autorizado: %d", user_id)
-            await self._send(chat_id, PRIVATE.format(user_id=user_id))
+            reply = YOUR_ID if command == "id" else PRIVATE
+            await self._send(chat_id, reply.format(user_id=user_id))
             return
         message_id = message.get("message_id")
         if not isinstance(message_id, int):
             return
+        date = message.get("date")
+        limit = self._config.max_question_chars
+
+        if isinstance(text, str):
+            if self._continues_long_text(chat_id, date):
+                self._mark_long(chat_id, date)
+                await self._refuse(chat_id, message_id, CONTINUATION)
+                logger.info("Continuación de un texto largo, borrada.")
+                return
+            if len(text) > limit:
+                self._mark_long(chat_id, date)
+
+        written = " ".join(
+            part for part in (text, message.get("caption")) if isinstance(part, str)
+        )
+        findings = scan(written) if written else []
+        if findings:
+            await self._refuse(
+                chat_id,
+                message_id,
+                BLOCKED.format(reason=escape(describe(findings), quote=False)),
+            )
+            names = ", ".join(kind.value for kind in kinds(findings))
+            logger.info("Mensaje bloqueado: %s", names)
+            return
+        if isinstance(text, str) and len(text) > limit:
+            await self._refuse(
+                chat_id, message_id, TOO_LONG.format(length=len(text), limit=limit)
+            )
+            logger.info("Texto largo borrado sin procesar.")
+            return
+
         audio = message.get("voice") or message.get("audio")
         if command in {"start", "ayuda", "help"}:
             await self._send(chat_id, welcome(voice=self._transcriber is not None))
+        elif command == "id":
+            await self._send(chat_id, YOUR_ID.format(user_id=user_id))
         elif command == "fuentes":
             await self._send(chat_id, self._sources_text)
         elif command:
@@ -227,25 +308,30 @@ class KareBot:
         elif isinstance(text, str) and text.strip():
             await self._question(chat_id, message_id, text.strip())
         else:
-            await self._send(chat_id, ONLY_TEXT)
+            await self._refuse(chat_id, message_id, NOT_PROCESSED)
+            logger.info("Mensaje sin texto ni voz, borrado.")
+
+    def _continues_long_text(self, chat_id: int, date: object) -> bool:
+        last = self._last_long.get(chat_id)
+        return (
+            isinstance(date, int)
+            and last is not None
+            and 0 <= date - last <= CONTINUATION_SECONDS
+        )
+
+    def _mark_long(self, chat_id: int, date: object) -> None:
+        if isinstance(date, int):
+            self._last_long[chat_id] = date
 
     async def _question(self, chat_id: int, message_id: int, text: str) -> None:
-        limit = self._config.max_question_chars
-        if len(text) > limit:
-            findings = scan(text)
-            if findings:
-                await self._block(chat_id, message_id, describe(findings))
-            else:
-                await self._send(
-                    chat_id, TOO_LONG.format(length=len(text), limit=limit)
-                )
-            logger.info("Pregunta demasiado larga, no procesada.")
-            return
         started = time.monotonic()
         async with self._typing(chat_id):
             answer = await self._answerer.answer(text)
         if answer.status == AnswerStatus.BLOCKED:
-            await self._block(chat_id, message_id, answer.reason or "")
+            # La guardia ya corrió antes; esto es solo por si el pipeline
+            # bloquea algo más.
+            reason = escape(answer.reason or "", quote=False)
+            await self._refuse(chat_id, message_id, BLOCKED.format(reason=reason))
             logger.info("Pregunta bloqueada: %s", ", ".join(answer.blocked_kinds))
             return
         for part in render_telegram(answer):
@@ -259,24 +345,18 @@ class KareBot:
             ", con error del modelo" if answer.error else "",
         )
 
-    async def _block(self, chat_id: int, message_id: int, reason: str) -> None:
-        deleted = await self._delete(chat_id, message_id)
-        lines = ["<b>Pregunta bloqueada</b>", escape(reason, quote=False)]
-        if deleted:
-            lines.append(DELETED)
-        await self._send(chat_id, "\n".join(lines))
-
     async def _voice(
         self, chat_id: int, message_id: int, audio: Mapping[str, Any]
     ) -> None:
         if self._transcriber is None:
             await self._send(chat_id, NO_VOICE)
             return
-        limit = self._config.max_voice_seconds
         duration = audio.get("duration")
         file_id = audio.get("file_id")
-        if isinstance(duration, int) and duration > limit:
-            await self._send(chat_id, VOICE_TOO_LONG.format(limit=limit))
+        if isinstance(duration, int) and duration > self._config.max_voice_seconds:
+            await self._send(
+                chat_id, VOICE_TOO_LONG.format(limit=self._config.max_voice_seconds)
+            )
             return
         if not isinstance(file_id, str):
             await self._send(chat_id, VOICE_FAILED)
@@ -297,13 +377,28 @@ class KareBot:
             return
         findings = scan(heard)
         if findings:
-            await self._delete(chat_id, message_id)
             names = ", ".join(kind.value for kind in kinds(findings))
-            await self._send(chat_id, VOICE_BLOCKED.format(kinds=escape(names)))
+            await self._refuse(
+                chat_id, message_id, VOICE_BLOCKED.format(kinds=escape(names))
+            )
             logger.info("Nota de voz bloqueada: %s", names)
+            return
+        limit = self._config.max_question_chars
+        if len(heard) > limit:
+            await self._refuse(
+                chat_id,
+                message_id,
+                VOICE_TRANSCRIPT_TOO_LONG.format(length=len(heard), limit=limit),
+            )
+            logger.info("Nota de voz larga borrada sin procesar.")
             return
         await self._send(chat_id, HEARD.format(text=escape(heard, quote=False)))
         await self._question(chat_id, message_id, heard)
+
+    async def _refuse(self, chat_id: int, message_id: int, html: str) -> None:
+        """Borra el mensaje y responde; si no pudo borrarlo, pide hacerlo."""
+        deleted = await self._delete(chat_id, message_id)
+        await self._send(chat_id, f"{html}\n{DELETED if deleted else NOT_DELETED}")
 
     async def _send(self, chat_id: int, html: str) -> None:
         try:
@@ -319,7 +414,7 @@ class KareBot:
         try:
             await self._api.delete_message(chat_id, message_id)
         except TelegramError as exc:
-            logger.warning("No se pudo borrar un mensaje bloqueado (%s).", exc)
+            logger.warning("No se pudo borrar un mensaje (%s).", exc)
             return False
         return True
 
@@ -371,6 +466,12 @@ async def run_bot(settings: Settings) -> int:
     bot = KareBot(
         api, pipeline, config, sources_text=sources_text, transcriber=transcriber
     )
+    # En el contenedor el bot es el proceso 1, que ignora SIGTERM por omisión:
+    # sin esto, cada redespliegue espera hasta que lo maten a la fuerza.
+    task = asyncio.current_task()
+    if task is not None:
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
     try:
         me = await api.call("getMe")
         username = me.get("username") if isinstance(me, dict) else None
@@ -386,6 +487,9 @@ async def run_bot(settings: Settings) -> int:
         # Token inválido, red caída: el mensaje ya viene sin el token.
         logger.error("Telegram no respondió como se esperaba: %s", exc)
         return 1
+    except asyncio.CancelledError:
+        logger.info("Bot detenido.")
+        return 0
     finally:
         await api.aclose()
     return 0

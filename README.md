@@ -76,10 +76,16 @@ Por eso:
 
 - Solo responde a los IDs de Telegram autorizados. A cualquier otro le dice
   su ID y nada más.
-- La guardia corre antes del modelo. Si un mensaje o una nota de voz trae
-  identificadores, el bot lo borra del chat, no lo procesa y no repite el dato.
-- No procesa textos de más de 600 caracteres: una pregunta larga suele ser
-  una nota clínica pegada.
+- La guardia corre antes del modelo, sobre todo texto: preguntas, comandos y
+  pies de foto. Si encuentra identificadores, el bot borra el mensaje del chat,
+  no lo procesa y no repite el dato. Si Telegram no le deja borrarlo, lo dice
+  para que lo borres tú.
+- Borra sin procesar los textos de más de 600 caracteres, porque una pregunta
+  así de larga suele ser una nota clínica pegada. También borra los pedazos en
+  que Telegram parte un texto muy largo, que llegan como mensajes aparte.
+- No procesa imágenes, documentos ni otros archivos: los borra.
+- Una nota de voz llega al servicio de transcripción antes de que la guardia
+  lea el texto. Por eso solo se dictan preguntas generales.
 - Los registros del servidor no llevan el texto de preguntas, respuestas ni
   transcripciones: solo estados, conteos y tiempos.
 - `/start` explica las reglas, `/fuentes` lista los documentos indexados e
@@ -184,6 +190,13 @@ Todo por variables de entorno o `.env` (ver `.env.example`). Lo principal:
 | `TELEGRAM_MAX_QUESTION_CHARS` | `600` | Largo máximo de una pregunta en el bot |
 
 ## Estado
+
+v0.2.1: una revisión independiente del bot encontró cinco fallas, ninguna
+crítica, y están corregidas. El bot decía que había borrado una nota de voz
+aunque el borrado fallara. Un texto largo que Telegram partía en dos dejaba
+pasar la cola. Los errores de algunos proveedores podían copiar parte de la
+pregunta al registro. El respaldo de Whisper podía mandar la clave de otro
+proveedor a OpenAI. Una descarga lenta podía colgar el arranque.
 
 v0.2.0 (14 de octubre de 2026): primera corrida con un modelo real y el corpus
 real (OMS 2018 y GPC 58). Corrigió tres cosas: encabezados y números de página

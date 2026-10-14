@@ -16,6 +16,8 @@ from app.telegram.api import MESSAGE_LIMIT
 # Margen bajo el límite de Telegram: se mide el HTML con etiquetas, que
 # siempre es más largo que el texto que Telegram cuenta.
 _BUDGET = MESSAGE_LIMIT - 196
+# Lugar que se reserva en una afirmación para el número, la nota y las citas.
+_CLAIM_RESERVE = 200
 _CUT_NOTE = "… (recortado: ver la fuente)"
 
 
@@ -23,11 +25,39 @@ def _e(text: str) -> str:
     return escape(text, quote=False)
 
 
+def _units(text: str) -> int:
+    """Largo como lo cuenta Telegram: unidades UTF-16 (un emoji vale dos)."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def _fit(block: str, budget: int) -> str:
-    """Un bloque que solo no cabe se recorta, y lo dice."""
-    if len(block) <= budget:
+    """Último recurso para un bloque que solo no cabe: se recorta y lo dice.
+
+    Las afirmaciones nunca llegan aquí (se parten antes); solo un título o una
+    fuente desmesurados.
+    """
+    if _units(block) <= budget:
         return block
-    return block[: budget - len(_CUT_NOTE)].rsplit(" ", 1)[0] + _CUT_NOTE
+    cut = block
+    while cut and _units(cut) > budget - _units(_CUT_NOTE):
+        cut = cut[:-64]
+    return cut.rsplit(" ", 1)[0] + _CUT_NOTE
+
+
+def _pieces(text: str, size: int) -> list[str]:
+    """Parte un texto en trozos cuyo HTML escapado cabe en size, por espacios."""
+    pieces: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}" if current else word
+        if current and _units(_e(candidate)) > size:
+            pieces.append(current)
+            current = word
+        else:
+            current = candidate
+    if current or not pieces:
+        pieces.append(current)
+    return pieces
 
 
 def pack(
@@ -39,17 +69,17 @@ def pack(
     budget: int = _BUDGET,
 ) -> list[str]:
     """Agrupa bloques en mensajes que caben, sin partir ningún bloque."""
-    room = budget - len(prefix) - len(suffix)
+    room = budget - _units(prefix) - _units(suffix)
     messages: list[str] = []
     current: list[str] = []
     size = 0
     for raw in blocks:
         block = _fit(raw, room)
-        extra = len(block) + (len(separator) if current else 0)
+        extra = _units(block) + (_units(separator) if current else 0)
         if current and size + extra > room:
             messages.append(prefix + separator.join(current) + suffix)
             current, size = [], 0
-            extra = len(block)
+            extra = _units(block)
         current.append(block)
         size += extra
     if current:
@@ -70,7 +100,14 @@ def render_telegram(answer: FinalAnswer, *, snippet_chars: int = 280) -> list[st
             for cid in claim.chunk_ids
         )
         note = " <i>(parcialmente sustentada)</i>" if claim.label == "partial" else ""
-        blocks.append(f"{index}. {_e(claim.text)}{note} {marks}".rstrip())
+        # Una afirmación nunca se recorta: si no cabe en un mensaje, sigue en el
+        # siguiente, y la nota y las citas van con su último trozo.
+        pieces = _pieces(claim.text, _BUDGET - _CLAIM_RESERVE)
+        for position, piece in enumerate(pieces):
+            block = f"{index}. {_e(piece)}" if position == 0 else _e(piece)
+            if position == len(pieces) - 1:
+                block = f"{block}{note} {marks}".rstrip()
+            blocks.append(block)
     if answer.status in {AnswerStatus.ANSWERED, AnswerStatus.PARTIAL}:
         blocks.append(f"<i>{_e(DISCLAIMER)}</i>")
     messages = pack(blocks, separator="\n\n")

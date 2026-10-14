@@ -16,6 +16,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
+from app.core.http_errors import describe_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +120,10 @@ async def _post_json(
                 await asyncio.sleep(wait)
                 continue
             if response.status_code != 200:
+                # Sin el cuerpo completo: algunos proveedores devuelven ahí
+                # parte de lo que se les envió.
                 raise LLMError(
-                    f"{provider} respondió {response.status_code}: "
-                    f"{response.text[:300]}"
+                    f"{provider} respondió {describe_error_response(response)}"
                 )
             try:
                 data = response.json()

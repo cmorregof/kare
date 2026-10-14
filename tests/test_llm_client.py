@@ -132,6 +132,33 @@ async def test_truncated_output_raises() -> None:
         await client.complete_json(system="S", user="U", schema=DraftAnswer)
 
 
+async def test_provider_error_bodies_are_not_copied_into_errors() -> None:
+    # OpenRouter devuelve en metadata.flagged_input el texto que marcó su
+    # moderación; ese texto no debe llegar al mensaje de error ni al registro.
+    leaked = "texto sintetico de la pregunta"
+    body = {
+        "error": {
+            "code": 403,
+            "message": (
+                "Your chosen model requires moderation and your input was flagged"
+            ),
+            "metadata": {"reasons": ["sintetico"], "flagged_input": leaked},
+        }
+    }
+    client = OpenAICompatClient(
+        api_key="clave-de-prueba",
+        model="modelo-remoto",
+        base_url="https://openrouter.example/api/v1",
+        transport=httpx.MockTransport(scripted([httpx.Response(403, json=body)], [])),
+        retry_delays=(0.0,),
+    )
+    with pytest.raises(LLMError) as failed:
+        await client.complete_json(system="S", user="U", schema=DraftAnswer)
+    assert "HTTP 403" in str(failed.value)
+    assert "flagged" in str(failed.value)
+    assert leaked not in str(failed.value)
+
+
 async def test_openai_compatible_local_server_without_key() -> None:
     seen: list[httpx.Request] = []
     response = httpx.Response(

@@ -9,6 +9,7 @@ archivo que ya existe.
 import hashlib
 import os
 import tempfile
+import time
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,9 @@ from app import __version__
 from app.corpus.manifest import Manifest, SourceSpec
 
 MAX_BYTES = 100 * 1024 * 1024
+# El tiempo de espera de httpx es por lectura: un servidor que entrega bytes a
+# cuentagotas nunca lo agota y dejaría colgado el arranque del bot.
+DEADLINE_SECONDS = 300.0
 # Algunos servidores rechazan clientes sin agente de usuario de navegador.
 _HEADERS = {
     "user-agent": (
@@ -42,10 +46,18 @@ class DownloadError(RuntimeError):
     pass
 
 
-def _fetch(url: str, target: Path, *, client: httpx.Client, max_bytes: int) -> str:
+def _fetch(
+    url: str,
+    target: Path,
+    *,
+    client: httpx.Client,
+    max_bytes: int,
+    deadline_seconds: float,
+) -> str:
     """Baja a un temporal junto al destino; devuelve su sha256 sin moverlo."""
     digest = hashlib.sha256()
     size = 0
+    deadline = time.monotonic() + deadline_seconds
     with client.stream("GET", url) as response:
         if response.status_code != 200:
             raise DownloadError(f"el servidor respondió {response.status_code}")
@@ -54,6 +66,8 @@ def _fetch(url: str, target: Path, *, client: httpx.Client, max_bytes: int) -> s
                 size += len(block)
                 if size > max_bytes:
                     raise DownloadError(f"pasa de {max_bytes // (1024 * 1024)} MB")
+                if time.monotonic() > deadline:
+                    raise DownloadError(f"tardó más de {deadline_seconds:.0f} s")
                 digest.update(block)
                 fh.write(block)
     return digest.hexdigest()
@@ -65,6 +79,7 @@ def download_source(
     corpus_dir: Path,
     client: httpx.Client,
     max_bytes: int = MAX_BYTES,
+    deadline_seconds: float = DEADLINE_SECONDS,
 ) -> DownloadReport:
     if not spec.ingestible:
         return DownloadReport(
@@ -87,7 +102,13 @@ def download_source(
     os.close(handle)
     partial = Path(temporary)
     try:
-        sha256 = _fetch(spec.download_url, partial, client=client, max_bytes=max_bytes)
+        sha256 = _fetch(
+            spec.download_url,
+            partial,
+            client=client,
+            max_bytes=max_bytes,
+            deadline_seconds=deadline_seconds,
+        )
         if sha256 != spec.sha256:
             return DownloadReport(
                 spec.id,
